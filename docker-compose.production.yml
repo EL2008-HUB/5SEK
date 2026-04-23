@@ -1,0 +1,102 @@
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/nginx/api.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ops/nginx/proxy-common.conf:/etc/nginx/includes/proxy-common.conf:ro
+      - ./ops/nginx/tls:/etc/nginx/tls:ro
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./5second-api
+    env_file:
+      - ./5second-api/.env.production.local
+    environment:
+      NODE_ENV: production
+      INLINE_BACKGROUND_WORKER: "false"
+      INLINE_INJECTION_WORKER: "false"
+    expose:
+      - "3000"
+    command: npm run start:api
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  worker:
+    build:
+      context: ./5second-api
+    env_file:
+      - ./5second-api/.env.production.local
+    environment:
+      NODE_ENV: production
+      INLINE_BACKGROUND_WORKER: "false"
+      INLINE_INJECTION_WORKER: "false"
+    command: npm run start:worker
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+  injector:
+    build:
+      context: ./5second-api
+    env_file:
+      - ./5second-api/.env.production.local
+    environment:
+      NODE_ENV: production
+      INLINE_BACKGROUND_WORKER: "false"
+      INLINE_INJECTION_WORKER: "false"
+    command: npm run start:injector
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.0
+    volumes:
+      - ./ops/alertmanager/alertmanager.local.yml:/etc/alertmanager/alertmanager.yml:ro
+    restart: unless-stopped
+
+  vector:
+    image: timberio/vector:0.41.1-alpine
+    environment:
+      VECTOR_HTTP_INGEST_URL: ${VECTOR_HTTP_INGEST_URL:-http://logs.example.com/ingest}
+    volumes:
+      - ./ops/vector/vector.toml:/etc/vector/vector.toml:ro
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M

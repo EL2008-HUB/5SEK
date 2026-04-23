@@ -1,0 +1,44 @@
+{
+  "name": "5second-api",
+  "version": "1.0.0",
+  "description": "5SEK - 5 Second Video Answers API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:api": "node server.js",
+    "start:worker": "node scripts/run-job-worker.js",
+    "start:injector": "node scripts/run-injection-worker.js",
+    "dev": "npx nodemon server.js",
+    "migrate": "npx knex migrate:latest",
+    "migrate:rollback": "npx knex migrate:rollback",
+    "migrate:plan": "node scripts/migration-plan.js",
+    "migrate:deploy": "node scripts/deploy-release.js",
+    "migrate:rollback:plan": "node scripts/rollback-last-migration.js",
+    "seed": "npx knex seed:run",
+    "seed:staging": "node scripts/seed-staging.js",
+    "test": "node test/adminAuditService.test.js && node test/backgroundJobService.test.js && node test/controllerHardening.test.js && node test/duelState.test.js && node test/feedComposer.test.js && node test/pushController.test.js && node test/questionController.test.js && node test/routeHardening.test.js && node test/safetyFeatures.test.js && node test/stripeService.test.js && node test/uploadService.test.js && node test/usageLimits.test.js && node test/run-tests.js",
+    "runtime:check": "node scripts/check-runtime-env.js",
+    "backup:db": "node scripts/backup-db.js",
+    "backup:restore": "node scripts/restore-db.js",
+    "backup:restore-drill": "node scripts/restore-drill.js",
+    "cleanup:media": "node scripts/cleanup-media.js",
+    "jobs:worker": "node scripts/run-job-worker.js",
+    "smoke": "node scripts/smoke-check.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "geoip-lite": "^2.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.13.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}

@@ -1,6 +1,5 @@
-ops/nginx/tls/*.pem
-ops/nginx/tls/*.crt
-ops/nginx/tls/*.key
-ops/alertmanager/alertmanager.local.yml
-5second-api/.env.production.local
-5second-app/.env.production.local
+node_modules/
+.env
+.env*.local
+uploads/
+*.log

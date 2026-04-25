@@ -1,0 +1,42 @@
+{
+  "api_version": "2026-04-21",
+  "contract_name": "5sek-mobile-v1",
+  "answer_types": ["video", "audio", "text", "reaction"],
+  "answer_engagement_events": ["watch_progress", "skipped", "completed", "replayed"],
+  "client_events": [
+    "app_open",
+    "app_resume",
+    "app_backgrounded",
+    "session_recovery_failed",
+    "answer_start",
+    "answer_complete",
+    "feed_open",
+    "feed_swipe",
+    "duel_vote",
+    "paywall_shown",
+    "paywall_clicked",
+    "paywall_closed",
+    "push_registered",
+    "push_open",
+    "push_permission_denied",
+    "share_opened",
+    "share_completed",
+    "upload_retry",
+    "upload_completed",
+    "upload_failed"
+  ],
+  "feature_flags": {
+    "feed_ranker_v2": ["control", "retention_boost"],
+    "paywall_v2": ["control", "price_anchor"],
+    "duels_v1": ["off", "on"]
+  },
+  "deep_links": {
+    "home": "five-second://home",
+    "feed": "five-second://feed",
+    "profile": "five-second://profile",
+    "record": "five-second://record",
+    "question_text": "five-second://question/:id/text",
+    "question_audio": "five-second://question/:id/audio",
+    "answer": "five-second://feed?answer=:id"
+  }
+}

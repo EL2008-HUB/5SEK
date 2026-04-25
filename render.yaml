@@ -1,0 +1,17 @@
+services:
+  - name: 5sek-api
+    type: web
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: INLINE_BACKGROUND_WORKER
+        value: false
+      - key: INLINE_INJECTION_WORKER
+        value: false

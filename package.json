@@ -16,7 +16,7 @@
     "migrate:rollback:plan": "node scripts/rollback-last-migration.js",
     "seed": "npx knex seed:run",
     "seed:staging": "node scripts/seed-staging.js",
-    "test": "node test/adminAuditService.test.js && node test/backgroundJobService.test.js && node test/controllerHardening.test.js && node test/duelState.test.js && node test/feedComposer.test.js && node test/pushController.test.js && node test/questionController.test.js && node test/routeHardening.test.js && node test/safetyFeatures.test.js && node test/stripeService.test.js && node test/uploadService.test.js && node test/usageLimits.test.js && node test/run-tests.js",
+    "test": "node test/adminAuditService.test.js && node test/aiService.test.js && node test/backgroundJobService.test.js && node test/controllerHardening.test.js && node test/dbResilience.test.js && node test/duelState.test.js && node test/feedComposer.test.js && node test/injectionEngine.test.js && node test/pushController.test.js && node test/questionController.test.js && node test/routeHardening.test.js && node test/safetyFeatures.test.js && node test/stripeService.test.js && node test/uploadService.test.js && node test/usageLimits.test.js && node test/run-tests.js",
     "runtime:check": "node scripts/check-runtime-env.js",
     "backup:db": "node scripts/backup-db.js",
     "backup:restore": "node scripts/restore-db.js",

@@ -1,51 +1,48 @@
 const path = require("path");
 const { bootstrapEnv } = require("./src/config/bootstrapEnv");
+const {
+  getAcquireConnectionTimeout,
+  getConnectionConfig,
+  getPoolConfig,
+} = require("./src/db/config");
 
 bootstrapEnv(__dirname);
 
 module.exports = {
   development: {
     client: "pg",
-    connection: process.env.DATABASE_URL || {
-      host: process.env.DB_HOST || "localhost",
-      port: process.env.DB_PORT || 5432,
-      database: process.env.DB_NAME || "fivesek",
-      user: process.env.DB_USER || "user",
-      password: process.env.DB_PASSWORD || "password"
-    },
+    connection: getConnectionConfig(),
     migrations: {
       directory: path.join(__dirname, "src/db/migrations")
     },
     seeds: {
       directory: path.join(__dirname, "src/db/seeds")
-    }
+    },
+    pool: getPoolConfig(),
+    acquireConnectionTimeout: getAcquireConnectionTimeout(),
   },
   production: {
     client: "pg",
-    connection: process.env.DATABASE_URL,
+    connection: getConnectionConfig(),
     migrations: {
       directory: path.join(__dirname, "src/db/migrations")
     },
     seeds: {
       directory: path.join(__dirname, "src/db/seeds")
     },
-    pool: {
-      min: 2,
-      max: 10
-    }
+    pool: getPoolConfig(),
+    acquireConnectionTimeout: getAcquireConnectionTimeout(),
   },
   staging: {
     client: "pg",
-    connection: process.env.DATABASE_URL,
+    connection: getConnectionConfig(),
     migrations: {
       directory: path.join(__dirname, "src/db/migrations")
     },
     seeds: {
       directory: path.join(__dirname, "src/db/seeds")
     },
-    pool: {
-      min: 2,
-      max: 10
-    }
+    pool: getPoolConfig(),
+    acquireConnectionTimeout: getAcquireConnectionTimeout(),
   }
 };

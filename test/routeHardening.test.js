@@ -302,3 +302,57 @@ test("health endpoint stays available during startup", async () => {
     assert.match(payload.timestamp, /^.+Z$/);
   });
 });
+
+test("auth and ai root routes expose lightweight health payloads", async () => {
+  const { db } = createMockDb();
+  const app = createApp({ db });
+
+  await withServer(app, async (baseUrl) => {
+    const authResponse = await fetch(`${baseUrl}/api/auth`);
+    const aiResponse = await fetch(`${baseUrl}/api/ai`);
+
+    assert.equal(authResponse.status, 200);
+    assert.deepEqual(await authResponse.json(), {
+      service: "auth",
+      status: "ok",
+      endpoints: [
+        "POST /api/auth/register",
+        "POST /api/auth/login",
+        "GET /api/auth/me",
+      ],
+    });
+
+    assert.equal(aiResponse.status, 200);
+    assert.deepEqual(await aiResponse.json(), {
+      service: "ai",
+      status: "ok",
+      endpoints: [
+        "GET /api/ai/countries",
+        "GET /api/ai/question",
+        "POST /api/ai/questions/bulk",
+      ],
+    });
+  });
+});
+
+test("auth and ai explicit health routes return minimal ok payloads", async () => {
+  const { db } = createMockDb();
+  const app = createApp({ db });
+
+  await withServer(app, async (baseUrl) => {
+    const authResponse = await fetch(`${baseUrl}/api/auth/health`);
+    const aiResponse = await fetch(`${baseUrl}/api/ai/health`);
+
+    assert.equal(authResponse.status, 200);
+    assert.deepEqual(await authResponse.json(), {
+      service: "auth",
+      status: "ok",
+    });
+
+    assert.equal(aiResponse.status, 200);
+    assert.deepEqual(await aiResponse.json(), {
+      service: "ai",
+      status: "ok",
+    });
+  });
+});

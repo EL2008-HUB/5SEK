@@ -19,6 +19,27 @@ const authRateLimit = createRateLimiter({
   message: "auth_rate_limited",
 });
 
+const authHealthPayload = {
+  service: "auth",
+  status: "ok",
+  endpoints: [
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "GET /api/auth/me",
+  ],
+};
+
+router.get("/", (req, res) => {
+  res.json(authHealthPayload);
+});
+
+router.get("/health", (req, res) => {
+  res.json({
+    service: "auth",
+    status: "ok",
+  });
+});
+
 router.post("/register", authRateLimit, validateRegister, authController.register);
 router.post("/login", authRateLimit, validateLogin, authController.login);
 router.post("/refresh", authRateLimit, validateRefresh, authController.refresh);

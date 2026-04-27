@@ -23,6 +23,27 @@ const adminRateLimit = createRateLimiter({
   message: "admin_rate_limited",
 });
 
+const aiHealthPayload = {
+  service: "ai",
+  status: "ok",
+  endpoints: [
+    "GET /api/ai/countries",
+    "GET /api/ai/question",
+    "POST /api/ai/questions/bulk",
+  ],
+};
+
+router.get("/", (req, res) => {
+  res.json(aiHealthPayload);
+});
+
+router.get("/health", (req, res) => {
+  res.json({
+    service: "ai",
+    status: "ok",
+  });
+});
+
 router.get("/countries", (req, res) => {
   res.json(getSupportedCountries());
 });

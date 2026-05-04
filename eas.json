@@ -1,0 +1,26 @@
+{
+  "cli": {
+    "version": ">= 16.5.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "e2e": {
+      "extends": "development",
+      "env": {
+        "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "e2e"
+      }
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "autoIncrement": true
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

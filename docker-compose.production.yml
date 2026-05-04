@@ -23,14 +23,14 @@ services:
       INLINE_INJECTION_WORKER: "false"
     expose:
       - "3000"
-    command: npm run start:api
+    command: ["node", "server.js"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -49,7 +49,7 @@ services:
       NODE_ENV: production
       INLINE_BACKGROUND_WORKER: "false"
       INLINE_INJECTION_WORKER: "false"
-    command: npm run start:worker
+    command: ["node", "scripts/run-job-worker.js"]
     restart: unless-stopped
     deploy:
       resources:
@@ -69,7 +69,7 @@ services:
       NODE_ENV: production
       INLINE_BACKGROUND_WORKER: "false"
       INLINE_INJECTION_WORKER: "false"
-    command: npm run start:injector
+    command: ["node", "scripts/run-injection-worker.js"]
     restart: unless-stopped
 
   prometheus:
@@ -80,9 +80,11 @@ services:
     restart: unless-stopped
 
   alertmanager:
-    image: prom/alertmanager:v0.28.0
+    image: prom/alertmanager:v0.27.0
     volumes:
-      - ./ops/alertmanager/alertmanager.local.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./ops/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
     restart: unless-stopped
 
   vector:

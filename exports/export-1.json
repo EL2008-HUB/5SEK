@@ -1,0 +1,104 @@
+{
+  "user": {
+    "id": 1,
+    "username": "testuser1",
+    "email": "test1@test.com",
+    "country": "AL",
+    "age_group": null,
+    "interests": null,
+    "role": "admin",
+    "is_premium": false,
+    "subscription_status": "free",
+    "created_at": "2026-05-05T14:20:25.400Z"
+  },
+  "answers": [
+    {
+      "id": 2,
+      "user_id": 1,
+      "question_id": 1,
+      "video_url": null,
+      "created_at": "2026-05-05T14:25:03.925Z",
+      "response_time": 3.2,
+      "likes": 0,
+      "shares": 0,
+      "views": 0,
+      "answer_type": "text",
+      "text_content": "Kisha bere me shume kohe per familjen time",
+      "watch_time_total": 0,
+      "completion_count": 0,
+      "skip_count": 0,
+      "is_hidden": false,
+      "storage_provider": "app",
+      "storage_public_id": null,
+      "moderation_status": "approved",
+      "moderation_reason": null,
+      "replay_count": 0,
+      "abuse_score": 0,
+      "requires_human_review": false,
+      "moderation_labels": {},
+      "deleted_at": null,
+      "deleted_by_user_id": null,
+      "report_count": 0,
+      "last_reported_at": null
+    },
+    {
+      "id": 1,
+      "user_id": 1,
+      "question_id": 1,
+      "video_url": null,
+      "created_at": "2026-05-05T14:23:53.963Z",
+      "response_time": 3.2,
+      "likes": 0,
+      "shares": 0,
+      "views": 0,
+      "answer_type": "text",
+      "text_content": "Kisha bere me shume kohe per familjen time",
+      "watch_time_total": 0,
+      "completion_count": 0,
+      "skip_count": 0,
+      "is_hidden": false,
+      "storage_provider": "app",
+      "storage_public_id": null,
+      "moderation_status": "approved",
+      "moderation_reason": null,
+      "replay_count": 0,
+      "abuse_score": 0,
+      "requires_human_review": false,
+      "moderation_labels": {},
+      "deleted_at": null,
+      "deleted_by_user_id": null,
+      "report_count": 0,
+      "last_reported_at": null
+    }
+  ],
+  "answer_events": [],
+  "moderation_reports": [],
+  "paywall_events": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "event_type": "paywall_shown",
+      "metadata": {
+        "source": "feed"
+      },
+      "created_at": "2026-05-05T14:22:23.478Z"
+    }
+  ],
+  "client_events": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "event_type": "app_open",
+      "screen": "home",
+      "metadata": {
+        "session_id": "test-session-001"
+      },
+      "created_at": "2026-05-05T14:22:23.529Z"
+    }
+  ],
+  "payment_events": [],
+  "support_tickets": [],
+  "refund_requests": [],
+  "consents": null,
+  "exported_at": "2026-05-05T14:25:22.897Z"
+}

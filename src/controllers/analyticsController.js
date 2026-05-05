@@ -132,16 +132,16 @@ exports.getDashboard = async (req, res) => {
       .groupBy("ea.variant")
       .select("ea.variant")
       .countDistinct({ users: "ea.user_id" })
-      .sum(req.db.raw("CASE WHEN pe.event_type = 'paywall_shown' THEN 1 ELSE 0 END as shown"))
-      .sum(req.db.raw("CASE WHEN pe.event_type = 'paywall_clicked' THEN 1 ELSE 0 END as clicked"));
+      .select(req.db.raw("SUM(CASE WHEN pe.event_type = 'paywall_shown' THEN 1 ELSE 0 END) as shown"))
+      .select(req.db.raw("SUM(CASE WHEN pe.event_type = 'paywall_clicked' THEN 1 ELSE 0 END) as clicked"));
 
     const feedByVariantRows = await req.db("experiment_assignments as ea")
       .leftJoin("answer_events as ae", "ea.user_id", "ae.user_id")
       .where("ea.experiment_key", "feed_ranker_v2")
       .groupBy("ea.variant")
       .select("ea.variant")
-      .sum(req.db.raw("CASE WHEN ae.event_type = 'completed' THEN 1 ELSE 0 END as completed"))
-      .sum(req.db.raw("CASE WHEN ae.event_type = 'skipped' THEN 1 ELSE 0 END as skipped"))
+      .select(req.db.raw("SUM(CASE WHEN ae.event_type = 'completed' THEN 1 ELSE 0 END) as completed"))
+      .select(req.db.raw("SUM(CASE WHEN ae.event_type = 'skipped' THEN 1 ELSE 0 END) as skipped"))
       .sum("ae.watch_time as watch_time_total");
 
     const completionCount = Number(answerMetrics?.completion_count || 0);

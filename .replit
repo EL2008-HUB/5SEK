@@ -9,15 +9,16 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-PORT = "5000"
+PORT = "3000"
 NODE_ENV = "development"
 APP_ENV = "development"
 LOG_FORMAT = "plain"
 INLINE_BACKGROUND_WORKER = "false"
 INLINE_INJECTION_WORKER = "false"
 INLINE_DUEL_WORKER = "false"
-CORS_ALLOWED_ORIGINS = "*"
 JWT_SECRET = "9bc13d90f72500e48a4a99137204aeb99e0409db8244392f19dff47922149eafbc597070b004501e3eb92f26ac128c7d1fab49754e8760ddf8177463444dfb94"
+EXPO_PUBLIC_API_URL = "https://3000-0c10317d-3725-448b-8795-3a9721b080d0-00-3opcyaer5dd94.worf.replit.dev/api"
+CORS_ALLOWED_ORIGINS = "*"
 
 [workflows]
 runButton = "Project"
@@ -35,13 +36,13 @@ args = "Start application"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "node server.js"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash start-all.sh"
+waitForPort = 5000
 
 [[ports]]
 localPort = 5000

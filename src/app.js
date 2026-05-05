@@ -74,30 +74,30 @@ function createCountryDetectionMiddleware() {
 
   app.disable("x-powered-by");
   app.set("trust proxy", getTrustedProxyHops());
-  app.use((req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "DENY");
-    res.setHeader("Referrer-Policy", "no-referrer");
-    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-    res.setHeader("Cross-Origin-Resource-Policy", "same-site");
-    if (requireHttpsInEdge()) {
-      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    }
-    next();
-  });
-  app.use(cors({
+  const corsOptions = {
     origin(origin, callback) {
       const allowed = getAllowedCorsOrigins();
-      if (!origin || allowed.includes(origin)) {
+      if (!origin || allowed.includes("*") || allowed.includes(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error("cors_origin_denied"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type", "X-User-Country", "X-Client-Contract", "X-Client-Version", "X-Request-Id"],
-  }));
+  };
+  app.use(cors(corsOptions));
+  app.use((req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader("Cross-Origin-Resource-Policy", isProduction ? "same-site" : "cross-origin");
+    if (requireHttpsInEdge()) {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    next();
+  });
   app.use((req, res, next) => {
     if (requireHttpsInEdge() && req.headers["x-forwarded-proto"] !== "https") {
       return res.status(426).json({ error: "https_required" });

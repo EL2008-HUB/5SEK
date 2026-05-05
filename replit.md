@@ -64,6 +64,20 @@ Set in Replit secrets/env:
 - Knex.js migrations auto-run on startup
 - Migrations in `src/db/migrations/`
 
+## Bugs Fixed (Production Review)
+
+Two real bugs were found and fixed during the production-readiness review:
+
+### Bug 1 — Float inserted into INTEGER column (`kpiService.js`)
+- **File:** `src/services/kpiService.js` line ~145
+- **Problem:** `time_in_stage_seconds` is an `INTEGER` column. The `response_time` value coming from the client (e.g. `3.14`) was inserted as a float, causing PostgreSQL to throw `invalid input syntax for type integer: "3.2"` on every answer creation.
+- **Fix:** Wrapped the value with `Math.round(Number(metadata.timeInStage))` before insert.
+
+### Bug 2 — Invalid SQL in analytics dashboard (`analyticsController.js`)
+- **File:** `src/controllers/analyticsController.js` lines ~135-145
+- **Problem:** Knex `.sum(db.raw("CASE WHEN ... END as alias"))` generates SQL with the alias *inside* the `SUM()` call — e.g. `SUM(CASE ... END as shown)` — which is invalid PostgreSQL syntax (error code `42601`). This caused `GET /api/analytics/dashboard` to always return 500.
+- **Fix:** Replaced `.sum(db.raw("... as alias"))` with `.select(db.raw("SUM(...) as alias"))` for all CASE-based aggregations.
+
 ## Deployment
 
 Configured for Replit autoscale deployment:

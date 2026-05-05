@@ -142,7 +142,7 @@ const kpiService = {
       session_id: metadata.sessionId,
       stage,
       reached_at: new Date(),
-      time_in_stage_seconds: metadata.timeInStage,
+      time_in_stage_seconds: metadata.timeInStage != null ? Math.round(Number(metadata.timeInStage)) : null,
       abandoned_reason: metadata.abandonedReason,
       created_at: new Date()
     });

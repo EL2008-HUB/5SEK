@@ -1,12 +1,16 @@
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Linking, Platform } from "react-native";
 import { useAuth } from "./AuthContext";
 import { analytics } from "../services/analytics";
 import { pushApi } from "../services/api";
 import { captureException, captureMessage } from "../services/observability";
+import {
+  cancelDailyQuestionReminder,
+  scheduleDailyQuestionReminder,
+} from "../services/pushRetention";
 
 type PermissionState =
   | "unknown"
@@ -17,6 +21,8 @@ type PermissionState =
 type PushContextValue = {
   permission: PermissionState;
   expoPushToken: string | null;
+  /** Explicit user opt-in — requests OS permission + registers token. */
+  requestEnablePush: () => Promise<boolean>;
   sendTestPush: () => Promise<void>;
 };
 
@@ -50,6 +56,17 @@ function resolveDeeplink(data: Record<string, unknown> | null | undefined) {
 
 function isExpoGo() {
   return Constants.appOwnership === "expo";
+}
+
+async function registerTokenWithBackend(token: string) {
+  const projectId = getProjectId();
+  await pushApi.register({
+    token,
+    platform: Platform.OS === "ios" ? "ios" : "android",
+    device_id: getDeviceId(),
+    project_id: projectId,
+    app_version: Constants.expoConfig?.version || "unknown",
+  });
 }
 
 export function PushProvider({ children }: { children: React.ReactNode }) {
@@ -99,80 +116,131 @@ export function PushProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    async function syncPushRegistration() {
-      if (!user?.id) {
+  const syncExistingGrant = useCallback(async () => {
+    if (!user?.id) {
+      setExpoPushToken(null);
+      await cancelDailyQuestionReminder();
+      return;
+    }
+
+    if (!Device.isDevice || isExpoGo()) {
+      setPermission("unsupported");
+      return;
+    }
+
+    try {
+      if (Platform.OS === "android") {
+        await Notifications.setNotificationChannelAsync("default", {
+          name: "default",
+          importance: Notifications.AndroidImportance.DEFAULT,
+        });
+        await Notifications.setNotificationChannelAsync("retention", {
+          name: "Daily reminders",
+          importance: Notifications.AndroidImportance.DEFAULT,
+        });
+      }
+
+      const existing = await Notifications.getPermissionsAsync();
+      if (existing.status !== "granted") {
+        setPermission(existing.status === "denied" ? "denied" : "unknown");
         setExpoPushToken(null);
         return;
       }
 
-      if (!Device.isDevice || isExpoGo()) {
+      const projectId = getProjectId();
+      if (!projectId) {
         setPermission("unsupported");
+        captureMessage("push_project_id_missing", "warning");
         return;
       }
 
-      try {
-        if (Platform.OS === "android") {
-          await Notifications.setNotificationChannelAsync("default", {
-            name: "default",
-            importance: Notifications.AndroidImportance.MAX,
-          });
-        }
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+      const token = tokenResponse.data;
+      setPermission("granted");
+      setExpoPushToken(token);
+      await registerTokenWithBackend(token);
+      await scheduleDailyQuestionReminder();
+      analytics.pushRegistered({
+        platform: Platform.OS,
+        source: "existing_grant",
+      });
+    } catch (error) {
+      captureException(error, {
+        tags: {
+          source: "push_sync_existing",
+        },
+      });
+    }
+  }, [user?.id]);
 
-        const existing = await Notifications.getPermissionsAsync();
-        let finalStatus = existing.status;
-        if (finalStatus !== "granted") {
-          const requested = await Notifications.requestPermissionsAsync();
-          finalStatus = requested.status;
-        }
+  useEffect(() => {
+    syncExistingGrant();
+  }, [syncExistingGrant]);
 
-        if (finalStatus !== "granted") {
-          setPermission("denied");
-          analytics.pushPermissionDenied({
-            status: finalStatus,
-          });
-          return;
-        }
-
-        const projectId = getProjectId();
-        if (!projectId) {
-          setPermission("unsupported");
-          captureMessage("push_project_id_missing", "warning");
-          return;
-        }
-
-        const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
-        const token = tokenResponse.data;
-        setPermission("granted");
-        setExpoPushToken(token);
-
-        await pushApi.register({
-          token,
-          platform: Platform.OS === "ios" ? "ios" : "android",
-          device_id: getDeviceId(),
-          project_id: projectId,
-          app_version: Constants.expoConfig?.version || "unknown",
-        });
-
-        analytics.pushRegistered({
-          platform: Platform.OS,
-        });
-      } catch (error) {
-        captureException(error, {
-          tags: {
-            source: "push_registration",
-          },
-        });
-      }
+  const requestEnablePush = useCallback(async () => {
+    if (!user?.id) return false;
+    if (!Device.isDevice || isExpoGo()) {
+      setPermission("unsupported");
+      return false;
     }
 
-    syncPushRegistration();
+    try {
+      if (Platform.OS === "android") {
+        await Notifications.setNotificationChannelAsync("default", {
+          name: "default",
+          importance: Notifications.AndroidImportance.DEFAULT,
+        });
+      }
+
+      const existing = await Notifications.getPermissionsAsync();
+      let finalStatus = existing.status;
+      if (finalStatus !== "granted") {
+        const requested = await Notifications.requestPermissionsAsync();
+        finalStatus = requested.status;
+      }
+
+      if (finalStatus !== "granted") {
+        setPermission("denied");
+        analytics.pushPermissionDenied({
+          status: finalStatus,
+          source: "explicit_opt_in",
+        });
+        return false;
+      }
+
+      const projectId = getProjectId();
+      if (!projectId) {
+        setPermission("unsupported");
+        captureMessage("push_project_id_missing", "warning");
+        return false;
+      }
+
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({ projectId });
+      const token = tokenResponse.data;
+      setPermission("granted");
+      setExpoPushToken(token);
+      await registerTokenWithBackend(token);
+      await scheduleDailyQuestionReminder();
+      analytics.pushRegistered({
+        platform: Platform.OS,
+        source: "explicit_opt_in",
+      });
+      return true;
+    } catch (error) {
+      captureException(error, {
+        tags: {
+          source: "push_explicit_opt_in",
+        },
+      });
+      return false;
+    }
   }, [user?.id]);
 
   const value = useMemo<PushContextValue>(
     () => ({
       permission,
       expoPushToken,
+      requestEnablePush,
       async sendTestPush() {
         await pushApi.sendTest({
           title: "5SEK test push",
@@ -184,7 +252,7 @@ export function PushProvider({ children }: { children: React.ReactNode }) {
         });
       },
     }),
-    [expoPushToken, permission]
+    [expoPushToken, permission, requestEnablePush]
   );
 
   return <PushContext.Provider value={value}>{children}</PushContext.Provider>;

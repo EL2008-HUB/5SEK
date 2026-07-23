@@ -1,25 +1,27 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Dimensions,
   FlatList,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
   ViewToken,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import VideoCard from "../components/VideoCard";
 import DuelCard, { DuelFeedItem } from "../components/DuelCard";
 import DropBanner from "../components/DropBanner";
+import StatePanel from "../components/StatePanel";
 import { useAuth } from "../context/AuthContext";
 import { answersApi, countryApi, duelsApi } from "../services/api";
 import { analytics } from "../services/analytics";
 import { isFeatureEnabled } from "../services/featureFlags";
 import { eventTracker } from "../services/eventTracker";
+import { loadFeedCache, saveFeedCache } from "../services/feedCache";
 import StreakBar from "../components/StreakBar";
-
+import { GlobalStyles } from "../theme";
 // 🔥 MICRO-UPGRADE 3: Haptic feedback
 let Haptics: any = null;
 try {
@@ -131,6 +133,8 @@ function mixFeedItems(answerItems: AnswerFeedItem[], duelItems: DuelFeedCardItem
 
 export default function FeedScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation<any>();
+  const [feedMode, setFeedMode] = useState<"local" | "global">("local");
   const [items, setItems] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -140,6 +144,8 @@ export default function FeedScreen() {
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [userCountry, setUserCountry] = useState("GLOBAL");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [servingCached, setServingCached] = useState(false);
+  const lastFetchAtRef = useRef(0);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -168,7 +174,7 @@ export default function FeedScreen() {
 
   const fetchFeed = useCallback(async (cursor: string | null = null, refresh = false) => {
     try {
-      const country = countryApi.getCountry();
+      const country = feedMode === "local" ? countryApi.getCountry() : "GLOBAL";
       const duelsEnabled = isFeatureEnabled("duels_v1");
       setLoadError(null);
 
@@ -192,9 +198,13 @@ export default function FeedScreen() {
 
       setNextCursor(serverCursor);
       setHasMore(serverHasMore);
+      setServingCached(false);
+      lastFetchAtRef.current = Date.now();
 
       if (refresh || !cursor) {
-        setItems(mixFeedItems(answerItems, duelItems));
+        const mixed = mixFeedItems(answerItems, duelItems);
+        setItems(mixed);
+        await saveFeedCache(feedMode, country, mixed);
       } else {
         setItems((prev) => {
           const seen = new Set(prev.map((item) => item.feedKey));
@@ -206,14 +216,25 @@ export default function FeedScreen() {
     } catch (error) {
       console.log("Error fetching feed:", error);
       if (!cursor) {
-        setLoadError("Could not load the feed right now.");
+        const country = feedMode === "local" ? countryApi.getCountry() : "GLOBAL";
+        const cached = await loadFeedCache(feedMode, country);
+        if (cached?.items?.length) {
+          setItems(cached.items as FeedItem[]);
+          setServingCached(true);
+          setLoadError(null);
+          setHasMore(false);
+          setNextCursor(null);
+        } else {
+          setLoadError("Could not load the feed right now.");
+          setServingCached(false);
+        }
       }
     } finally {
       setLoading(false);
       setRefreshing(false);
       setLoadingMore(false);
     }
-  }, [user?.id]);
+  }, [user?.id, feedMode]);
 
   useEffect(() => {
     const init = async () => {
@@ -222,19 +243,50 @@ export default function FeedScreen() {
     };
 
     init();
-  }, [fetchFeed]);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setNextCursor(null);
+      setHasMore(true);
+      setServingCached(false);
+
+      const country = feedMode === "local" ? countryApi.getCountry() : "GLOBAL";
+      const cached = await loadFeedCache(feedMode, country);
+      if (!cancelled && cached?.items?.length) {
+        setItems(cached.items as FeedItem[]);
+        setServingCached(true);
+        setLoading(false);
+      } else if (!cancelled) {
+        setLoading(true);
+      }
+
+      if (!cancelled) {
+        await fetchFeed(null, true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [feedMode, fetchFeed]);
 
   useFocusEffect(
     useCallback(() => {
-      setNextCursor(null);
-      setHasMore(true);
       setUserCountry(countryApi.getCountry());
       analytics.feedOpen();
       eventTracker.feedOpen();
       eventTracker.newSession();
-      fetchFeed(null, true);
 
-      // Flush events when leaving feed
+      const stale = Date.now() - lastFetchAtRef.current > 45_000;
+      if (stale) {
+        setNextCursor(null);
+        setHasMore(true);
+        fetchFeed(null, true);
+      }
+
       return () => {
         eventTracker.feedClose();
       };
@@ -268,10 +320,10 @@ export default function FeedScreen() {
     );
   }, []);
 
-  if (loading) {
+  if (loading && items.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF3366" />
+      <View style={styles.container}>
+        <StatePanel variant="loading" message="Loading feed…" />
       </View>
     );
   }
@@ -281,9 +333,26 @@ export default function FeedScreen() {
       <StatusBar style="light" />
 
       <View style={styles.countryHeader}>
-        <Text style={styles.countryHeaderText}>
-          {COUNTRY_FLAGS[userCountry] || "🌍"} Feed
-        </Text>
+        <View style={styles.toggleContainer}>
+          <TouchableOpacity
+            style={[styles.toggleButton, feedMode === "local" && styles.toggleButtonActive]}
+            onPress={() => setFeedMode("local")}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.toggleText, feedMode === "local" && styles.toggleTextActive]}>
+              {COUNTRY_FLAGS[userCountry] || "🇦🇱"} LOKAL
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.toggleButton, feedMode === "global" && styles.toggleButtonActive]}
+            onPress={() => setFeedMode("global")}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.toggleText, feedMode === "global" && styles.toggleTextActive]}>
+              🌍 GLOBAL
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 🔥 Live Question Drops */}
@@ -294,37 +363,57 @@ export default function FeedScreen() {
         <StreakBar compact />
       </View>
 
+      {servingCached ? (
+        <View style={styles.offlineBanner} pointerEvents="box-none">
+          <Text style={styles.offlineBannerText}>Offline · showing saved feed</Text>
+          <TouchableOpacity onPress={() => fetchFeed(null, true)} hitSlop={8}>
+            <Text style={styles.offlineBannerAction}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {loadError ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>📡</Text>
-          <Text style={styles.emptyText}>Feed unavailable</Text>
-          <Text style={styles.emptySubtext}>{loadError}</Text>
-          <Text style={styles.retryInline} onPress={() => fetchFeed(null, true)}>
-            Retry now
-          </Text>
-        </View>
+        <StatePanel
+          variant="error"
+          title="Feed unavailable"
+          message={loadError}
+          primaryLabel="Try again"
+          onPrimaryPress={() => fetchFeed(null, true)}
+        />
       ) : items.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>🎬</Text>
-          <Text style={styles.emptyText}>No answers yet</Text>
-          <Text style={styles.emptySubtext}>Be the first to answer.</Text>
-        </View>
+        <StatePanel
+          variant="empty"
+          title="No answers yet"
+          message="Be the first to answer today's question in 5 seconds."
+          primaryLabel="Record my answer"
+          onPrimaryPress={() => navigation.navigate("Record")}
+          secondaryLabel="Refresh"
+          onSecondaryPress={onRefresh}
+        />
       ) : (
         <FlatList
           data={items}
+          extraData={visibleIndex}
           keyExtractor={(item) => item.feedKey}
-          renderItem={({ item, index }) =>
-            item.feedType === "duel" ? (
+          renderItem={({ item, index }) => {
+            const mountMedia = Math.abs(index - visibleIndex) <= 1;
+            return item.feedType === "duel" ? (
               <DuelCard
                 duel={item}
                 currentUserId={user?.id || 0}
                 isVisible={index === visibleIndex}
+                mountMedia={mountMedia}
                 onUpdated={handleDuelUpdated}
               />
             ) : (
-              <VideoCard video={item} isVisible={index === visibleIndex} position={index} />
-            )
-          }
+              <VideoCard
+                video={item}
+                isVisible={index === visibleIndex}
+                mountMedia={mountMedia}
+                position={index}
+              />
+            );
+          }}
           pagingEnabled
           showsVerticalScrollIndicator={false}
           snapToInterval={height}
@@ -337,9 +426,10 @@ export default function FeedScreen() {
           refreshing={refreshing}
           onRefresh={onRefresh}
           removeClippedSubviews
-          maxToRenderPerBatch={4}
-          windowSize={7}
-          initialNumToRender={2}
+          maxToRenderPerBatch={2}
+          windowSize={5}
+          initialNumToRender={1}
+          updateCellsBatchingPeriod={50}
           getItemLayout={(_, index) => ({
             length: height,
             offset: height * index,
@@ -352,16 +442,7 @@ export default function FeedScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: "#000",
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  container: GlobalStyles.container,
   countryHeader: {
     position: "absolute",
     top: 50,
@@ -369,43 +450,68 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 10,
     alignItems: "center",
-  },
-  countryHeaderText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "800",
-    textShadowColor: "rgba(0,0,0,0.8)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  emptyContainer: {
-    flex: 1,
     justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
   },
-  emptyEmoji: {
-    fontSize: 48,
+  toggleContainer: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 20,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
   },
-  emptyText: {
-    color: "#FFF",
-    fontSize: 20,
+  toggleButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 17,
+  },
+  toggleButtonActive: {
+    backgroundColor: "#FF3366",
+    shadowColor: "#FF3366",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  toggleText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12,
     fontWeight: "700",
+    letterSpacing: 0.5,
   },
-  emptySubtext: {
-    color: "#888",
-    fontSize: 14,
-  },
-  retryInline: {
-    color: "#FF6B8A",
-    fontSize: 14,
+  toggleTextActive: {
+    color: "#FFF",
     fontWeight: "800",
-    marginTop: 10,
   },
   fusionHeader: {
     position: "absolute",
     top: 50,
     right: 12,
     zIndex: 11,
+  },
+  offlineBanner: {
+    position: "absolute",
+    top: 96,
+    alignSelf: "center",
+    zIndex: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(10,10,14,0.82)",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  offlineBannerText: {
+    color: "rgba(229,240,248,0.72)",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  offlineBannerAction: {
+    color: "#FF6B8A",
+    fontSize: 12,
+    fontWeight: "900",
   },
 });

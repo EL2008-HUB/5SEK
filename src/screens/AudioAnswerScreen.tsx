@@ -1,23 +1,20 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   AppState,
-  Linking,
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Animated,
   Easing,
-  Dimensions,
 } from "react-native";
 import { Audio } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import RewardOverlay from "../components/RewardOverlay";
-import PaywallModal from "../components/PaywallModal";
 import { useAuth } from "../context/AuthContext";
-import { answersApi, paywallApi, paymentsApi } from "../services/api";
+import { answersApi } from "../services/api";
 import { analytics } from "../services/analytics";
 import {
   clearUploadDraft,
@@ -25,12 +22,19 @@ import {
   getLatestFailedDraft,
   markUploadFailed,
 } from "../services/uploadQueue";
-import { canShowPaywall, markPaywallShown } from "../utils/paywallCooldown";
+import { showAppAlert } from "../utils/alerts";
+import { Colors, GlobalStyles } from "../theme";
 
-const { width } = Dimensions.get("window");
 const MAX_SECONDS = 5;
 
-type Phase = "idle" | "countdown" | "recording" | "preview" | "submitting" | "reward";
+type Phase =
+  | "idle"
+  | "countdown"
+  | "recording"
+  | "preview"
+  | "submitting"
+  | "upload_failed"
+  | "reward";
 
 export default function AudioAnswerScreen({ route, navigation }: any) {
   const question = route?.params?.question || {
@@ -47,7 +51,6 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
   const [rewardData, setRewardData] = useState<any>(null);
   const [dailyUsage, setDailyUsage] = useState<any>(null);
   const [creatorActivation, setCreatorActivation] = useState<any>(null);
-  const [showPaywall, setShowPaywall] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const [failedUploadDraft, setFailedUploadDraft] = useState<any>(null);
@@ -152,17 +155,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
       const usageRes = await answersApi.getDailyUsage(user.id);
       const usage = usageRes.data;
       if (!usage.is_premium && usage.remaining !== null && usage.remaining <= 0) {
-        // 🔥 SOFT PAYWALL: Check cooldown
-        const shouldShow = await canShowPaywall();
-        if (shouldShow) {
-          setDailyUsage(usage);
-          setShowPaywall(true);
-          await markPaywallShown();
-          paywallApi.trackEvent("paywall_shown", {
-            screen: "audio_answer",
-            answers_used: usage.used,
-          }, user.id).catch(() => {});
-        }
+        showAppAlert("Come back soon", "Your free answers reset tomorrow.");
         return;
       }
     } catch (_) {}
@@ -225,9 +218,11 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!recordingUri) return;
+  const handleSubmit = async (audioUri?: string | null, attempt = 1) => {
+    const uri = audioUri || recordingUri;
+    if (!uri) return;
     setPhase("submitting");
+    setRecordingUri(uri);
 
     const responseTime = Math.min((Date.now() - startTime) / 1000, MAX_SECONDS);
     const draftId = `audio-${question?.id || "unknown"}-${Date.now()}`;
@@ -235,7 +230,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
     await enqueueUploadDraft({
       id: draftId,
       questionId: question?.id || 0,
-      mediaUri: recordingUri,
+      mediaUri: uri,
       answerType: "audio",
       responseTime: parseFloat(responseTime.toFixed(1)),
       screen: "audio_answer",
@@ -246,7 +241,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
       const result = await answersApi.upload(
         user?.id || 0,
         question?.id || 1,
-        recordingUri,
+        uri,
         parseFloat(responseTime.toFixed(1)),
         { answer_type: "audio" }
       );
@@ -260,32 +255,69 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
       analytics.answerComplete("audio_answer", { mode: "audio", question_id: question?.id || null });
       setPhase("reward");
     } catch (error: any) {
-      await markUploadFailed(draftId);
-      const latestDraft = await getLatestFailedDraft("audio_answer");
-      setFailedUploadDraft(latestDraft);
-      analytics.uploadFailed("audio_answer", { question_id: question?.id || null });
+      console.error("Audio upload error:", error);
+
       if (error?.response?.status === 403) {
+        await clearUploadDraft(draftId);
         const errData = error.response.data;
-        setDailyUsage({ used: errData.answers_used || 5, limit: 5, remaining: 0, is_premium: false });
-        const shouldShow = await canShowPaywall();
-        if (shouldShow) {
-          setShowPaywall(true);
-          await markPaywallShown();
-          paywallApi.trackEvent("paywall_shown", { screen: "audio_answer", trigger: "submit_403" }, user?.id).catch(() => {});
-        }
+        setDailyUsage({
+          used: errData.answers_used || 5,
+          limit: errData.limit || 5,
+          remaining: 0,
+          is_premium: false,
+        });
+        showAppAlert("Come back soon", "Your free answers reset tomorrow.");
         setPhase("idle");
         return;
       }
-      setPhase("preview");
+
+      const isNetworkish =
+        !error?.response ||
+        error?.code === "ECONNABORTED" ||
+        error?.message?.includes?.("Network");
+
+      if (attempt < 2 && isNetworkish) {
+        analytics.uploadRetry("audio_answer", {
+          question_id: question?.id || null,
+          auto: true,
+          attempt,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        await clearUploadDraft(draftId);
+        return handleSubmit(uri, attempt + 1);
+      }
+
+      await markUploadFailed(draftId);
+      const latestDraft = await getLatestFailedDraft("audio_answer");
+      setFailedUploadDraft(latestDraft);
+      analytics.uploadFailed("audio_answer", {
+        question_id: question?.id || null,
+        attempt,
+      });
+      setPhase("upload_failed");
     }
   };
 
   const retryFailedUpload = async () => {
-    if (!failedUploadDraft?.mediaUri) return;
-    analytics.uploadRetry("audio_answer", { question_id: failedUploadDraft.questionId });
-    await clearUploadDraft(failedUploadDraft.id);
-    setRecordingUri(failedUploadDraft.mediaUri);
-    setPhase("preview");
+    const uri = failedUploadDraft?.mediaUri || recordingUri;
+    if (!uri) return;
+    analytics.uploadRetry("audio_answer", {
+      question_id: failedUploadDraft?.questionId || question?.id || null,
+    });
+    if (failedUploadDraft?.id) {
+      await clearUploadDraft(failedUploadDraft.id);
+    }
+    setRecordingUri(uri);
+    await handleSubmit(uri);
+  };
+
+  const discardFailedUpload = async () => {
+    if (failedUploadDraft?.id) {
+      await clearUploadDraft(failedUploadDraft.id);
+    }
+    setFailedUploadDraft(null);
+    setRecordingUri(null);
+    setPhase("idle");
   };
 
   const resetToIdle = () => {
@@ -306,7 +338,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
   if (permissionGranted === false) {
     return (
       <View style={styles.root}>
-        <LinearGradient colors={["#0A0A0A", "#101022", "#0A0A0A"]} style={StyleSheet.absoluteFill} />
+        <LinearGradient colors={Colors.background.gradient} style={StyleSheet.absoluteFill} />
         <View style={styles.header}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={22} color="#FFF" />
@@ -333,7 +365,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
 
   return (
     <View style={styles.root}>
-      <LinearGradient colors={["#0A0A0A", "#101022", "#0A0A0A"]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={Colors.background.gradient} style={StyleSheet.absoluteFill} />
       <StatusBar style="light" />
 
       {/* Header */}
@@ -453,9 +485,40 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
               <TouchableOpacity style={styles.retryBtn} onPress={resetToIdle}>
                 <Text style={styles.retryBtnText}>🔁 Try again</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.postBtn} onPress={handleSubmit}>
+              <TouchableOpacity style={styles.postBtn} onPress={() => handleSubmit()}>
                 <LinearGradient colors={["#FF3366", "#FF6B6B"]} style={styles.postBtnGradient}>
                   <Text style={styles.postBtnText}>🚀 Post</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* UPLOAD FAILED — audio stays, Retry / Discard */}
+        {phase === "upload_failed" && recordingUri && (
+          <View style={styles.previewWrap}>
+            <Text style={styles.previewTitle}>Couldn't post</Text>
+            <Text style={styles.failBody}>
+              Your take is still here. Retry when the connection is back — nothing is lost.
+            </Text>
+
+            <TouchableOpacity style={styles.playBtn} onPress={playPreview}>
+              <LinearGradient
+                colors={isPlayingPreview ? ["#333", "#444"] : ["#FF5A7A", "#FF3366"]}
+                style={styles.playBtnGradient}
+              >
+                <Ionicons name={isPlayingPreview ? "pause" : "play"} size={32} color="#FFF" />
+              </LinearGradient>
+            </TouchableOpacity>
+            <Text style={styles.playHint}>{isPlayingPreview ? "Playing…" : "Tap to listen"}</Text>
+
+            <View style={styles.previewActions}>
+              <TouchableOpacity style={styles.retryBtn} onPress={discardFailedUpload}>
+                <Text style={styles.retryBtnText}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.postBtn} onPress={retryFailedUpload}>
+                <LinearGradient colors={["#FF5A7A", "#FF3366"]} style={styles.postBtnGradient}>
+                  <Text style={styles.postBtnText}>Retry</Text>
                 </LinearGradient>
               </TouchableOpacity>
             </View>
@@ -478,36 +541,6 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
           creatorActivation={creatorActivation}
           onViewFeed={() => { resetToIdle(); goFeed(); }}
           onDone={resetToIdle}
-          onUpgrade={() => setShowPaywall(true)}
-        />
-      )}
-
-      {/* Paywall */}
-      {showPaywall && (
-        <PaywallModal
-          answersUsed={dailyUsage?.used || 5}
-          onUpgrade={() => {
-            paywallApi.trackEvent("paywall_clicked", { screen: "audio_answer" }, user?.id).catch(() => {});
-            paymentsApi.createCheckout("audio_paywall")
-              .then((response) => {
-                if (response.data?.url) {
-                  Linking.openURL(response.data.url).catch(() => {});
-                }
-              })
-              .catch(() => {})
-              .finally(() => setShowPaywall(false));
-          }}
-          onClose={() => {
-            paywallApi.trackEvent("paywall_closed", { screen: "audio_answer" }, user?.id).catch(() => {});
-            setShowPaywall(false);
-          }}
-          onSecondChance={async () => {
-            try {
-              paywallApi.trackEvent("second_chance_used", { screen: "audio_answer" }, user?.id).catch(() => {});
-              await paywallApi.grantBonus(user?.id || 0);
-            } catch (_) {}
-            setShowPaywall(false);
-          }}
         />
       )}
     </View>
@@ -515,7 +548,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000" },
+  root: GlobalStyles.container,
   header: {
     paddingTop: 56, paddingHorizontal: 16,
     flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingBottom: 8,
@@ -535,9 +568,8 @@ const styles = StyleSheet.create({
   modeBadgeText: { color: "#FF3366", fontSize: 13, fontWeight: "800" },
   questionCard: {
     marginHorizontal: 20, marginTop: 16, marginBottom: 8,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 18, padding: 20,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+    ...GlobalStyles.glassCard,
+    padding: 20,
   },
   questionText: { color: "#FFF", fontSize: 20, fontWeight: "800", lineHeight: 28, marginBottom: 8 },
   questionSub: { color: "rgba(255,255,255,0.5)", fontSize: 13, fontWeight: "600" },
@@ -597,6 +629,16 @@ const styles = StyleSheet.create({
   stopBtnText: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontWeight: "700" },
   previewWrap: { alignItems: "center", width: "100%" },
   previewTitle: { color: "#FFF", fontSize: 22, fontWeight: "800", marginBottom: 24 },
+  failBody: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 20,
+    marginTop: -12,
+    marginBottom: 20,
+    maxWidth: 300,
+  },
   playBtn: { borderRadius: 40, overflow: "hidden", marginBottom: 12 },
   playBtnGradient: { width: 80, height: 80, borderRadius: 40, justifyContent: "center", alignItems: "center" },
   playHint: { color: "rgba(255,255,255,0.5)", fontSize: 13, fontWeight: "600", marginBottom: 32 },

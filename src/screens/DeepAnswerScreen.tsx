@@ -11,23 +11,20 @@
  * TRACKING:
  *   share_open → view → answer_from_share
  */
-import React, { useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ActivityIndicator,
   TouchableOpacity,
-  Dimensions,
   Animated,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import StatePanel from "../components/StatePanel";
 import VideoCard from "../components/VideoCard";
 import { answersApi, shareApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
-
-const { width, height } = Dimensions.get("window");
 
 export default function DeepAnswerScreen({ route, navigation }: any) {
   const answerId = Number(route?.params?.answerId);
@@ -38,24 +35,34 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
   const fadeIn = useRef(new Animated.Value(0)).current;
   const ctaScale = useRef(new Animated.Value(0.8)).current;
   const ctaPulse = useRef(new Animated.Value(1)).current;
+  const trackedOpenRef = useRef(false);
 
-  useEffect(() => {
-    if (!answerId) {
-      setError("Invalid link");
+  const loadAnswer = useCallback(() => {
+    if (!answerId || Number.isNaN(answerId)) {
+      setError("This link looks incomplete.");
       setLoading(false);
+      setAnswer(null);
       return;
     }
 
-    // Track share_open event
-    shareApi.trackEvent(answerId, "share_open").catch(() => {});
-    eventTracker.shareOpen(answerId);
+    setLoading(true);
+    setError(null);
 
-    answersApi.getById(answerId)
+    if (!trackedOpenRef.current) {
+      trackedOpenRef.current = true;
+      shareApi.trackEvent(answerId, "share_open").catch(() => {});
+      eventTracker.shareOpen(answerId);
+    }
+
+    answersApi
+      .getById(answerId)
       .then((res: any) => {
         setAnswer(res.data);
         setLoading(false);
 
-        // Animate in
+        fadeIn.setValue(0);
+        ctaScale.setValue(0.8);
+
         Animated.parallel([
           Animated.timing(fadeIn, {
             toValue: 1,
@@ -70,7 +77,6 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
           }),
         ]).start();
 
-        // Pulse CTA button
         Animated.loop(
           Animated.sequence([
             Animated.timing(ctaPulse, {
@@ -86,19 +92,23 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
           ])
         ).start();
 
-        // Track deep link view
         eventTracker.view(answerId, 0);
 
-        // Load creator stats
-        shareApi.getCreatorStats(answerId)
+        shareApi
+          .getCreatorStats(answerId)
           .then((statsRes: any) => setCreatorStats(statsRes.data))
           .catch(() => {});
       })
-      .catch((err: any) => {
-        setError("Answer not found");
+      .catch(() => {
+        setError("We couldn't open this answer. It may have been removed.");
         setLoading(false);
+        setAnswer(null);
       });
-  }, [answerId]);
+  }, [answerId, ctaPulse, ctaScale, fadeIn]);
+
+  useEffect(() => {
+    loadAnswer();
+  }, [loadAnswer]);
 
   const goToFeed = () => {
     try {
@@ -111,11 +121,9 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
   const answerThis = () => {
     if (!answer) return;
 
-    // Track answer_from_share
     shareApi.trackEvent(answerId, "answer_from_share").catch(() => {});
     eventTracker.answerFromShare(answerId);
 
-    // Navigate to record screen with the question pre-loaded
     try {
       navigation.navigate("Main", {
         screen: "Record",
@@ -134,8 +142,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
     return (
       <View style={styles.center}>
         <LinearGradient colors={["#090C17", "#14142A"]} style={StyleSheet.absoluteFill} />
-        <ActivityIndicator size="large" color="#FF3366" />
-        <Text style={styles.loadingText}>Loading answer...</Text>
+        <StatePanel variant="loading" message="Loading answer…" />
       </View>
     );
   }
@@ -144,11 +151,16 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
     return (
       <View style={styles.center}>
         <LinearGradient colors={["#090C17", "#14142A"]} style={StyleSheet.absoluteFill} />
-        <Text style={styles.errorEmoji}>🔗</Text>
-        <Text style={styles.errorText}>{error || "Something went wrong"}</Text>
-        <TouchableOpacity style={styles.feedBtn} onPress={goToFeed}>
-          <Text style={styles.feedBtnText}>Browse Feed →</Text>
-        </TouchableOpacity>
+        <StatePanel
+          variant="error"
+          icon="🔗"
+          title="Couldn't open answer"
+          message={error || "Something went wrong opening this link."}
+          primaryLabel="Try again"
+          onPrimaryPress={loadAnswer}
+          secondaryLabel="Browse feed"
+          onSecondaryPress={goToFeed}
+        />
       </View>
     );
   }
@@ -241,35 +253,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 24,
   },
-  loadingText: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 14,
-    marginTop: 16,
-  },
-  errorEmoji: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: "#FFF",
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 24,
-  },
-  feedBtn: {
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    backgroundColor: "rgba(255,51,102,0.15)",
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255,51,102,0.3)",
-  },
-  feedBtnText: {
-    color: "#FF3366",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
   // Persistent overlay (top)
   persistentOverlay: {
     position: "absolute",

@@ -12,6 +12,18 @@
 
 export const WEB_APP_BASE_URL = "https://5sek.app";
 
+const ALLOWED_HTTPS_HOSTS = new Set(["5sek.app", "www.5sek.app", "app.5sek.app"]);
+
+export function isAllowedDeepLink(url: string) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "five-second:") return true;
+    return parsed.protocol === "https:" && ALLOWED_HTTPS_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch (_) {
+    return false;
+  }
+}
+
 // ── Answer deep links ──
 
 export function buildAnswerDeepLink(answerId: number) {

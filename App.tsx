@@ -1,6 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
-import { AppState, View, Text, StyleSheet, ScrollView } from "react-native";
+import { AppState, Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/context/AuthContext";
 import { countryApi } from "./src/services/api";
@@ -13,11 +13,22 @@ import { FusionLoopProvider } from "./src/context/FusionLoopContext";
 import FusionBadgeToast from "./src/components/FusionBadgeToast";
 
 // Error Boundary to catch initialization errors
-function ErrorFallback({ error }: { error: Error }) {
+function ErrorFallback({
+  error,
+  onRetry,
+}: {
+  error: Error;
+  onRetry?: () => void;
+}) {
   return (
     <ScrollView style={styles.errorContainer} contentContainerStyle={styles.errorContent}>
-      <Text style={styles.errorTitle}>App Failed to Start</Text>
+      <Text style={styles.errorTitle}>Something went wrong</Text>
       <Text style={styles.errorMessage}>{error.message}</Text>
+      {onRetry ? (
+        <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.9}>
+          <Text style={styles.retryBtnText}>Try again</Text>
+        </TouchableOpacity>
+      ) : null}
       {__DEV__ && (
         <Text style={styles.errorStack}>{error.stack}</Text>
       )}
@@ -51,16 +62,20 @@ class SentryErrorBoundary extends React.Component<
     });
   }
 
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
     if (this.state.hasError && this.state.error) {
-      return <ErrorFallback error={this.state.error} />;
+      return <ErrorFallback error={this.state.error} onRetry={this.handleRetry} />;
     }
     return this.props.children;
   }
 }
 
 function AppContent() {
-  const [initError, setInitError] = useState<Error | null>(null);
+  const [initError] = useState<Error | null>(null);
 
   useEffect(() => {
     try {
@@ -137,7 +152,7 @@ export function App() {
   );
 }
 
-export default Sentry.wrap(App);
+export default Platform.OS === "web" ? App : Sentry.wrap(App);
 
 const styles = StyleSheet.create({
   container: {
@@ -165,6 +180,19 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     marginBottom: 20,
     textAlign: "center",
+  },
+  retryBtn: {
+    alignSelf: "center",
+    backgroundColor: "#FF3366",
+    borderRadius: 14,
+    paddingHorizontal: 22,
+    paddingVertical: 12,
+    marginBottom: 20,
+  },
+  retryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
   },
   errorStack: {
     fontSize: 12,

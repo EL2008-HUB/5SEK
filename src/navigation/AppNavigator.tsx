@@ -1,5 +1,10 @@
-import React from "react";
-import { NavigationContainer, useNavigationContainerRef } from "@react-navigation/native";
+import React, { useEffect, useRef } from "react";
+import { Linking } from "react-native";
+import {
+  NavigationContainer,
+  useNavigation,
+  useNavigationContainerRef,
+} from "@react-navigation/native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,12 +18,45 @@ import AudioAnswerScreen from "../screens/AudioAnswerScreen";
 import DeepAnswerScreen from "../screens/DeepAnswerScreen";
 import RemixRecordScreen from "../screens/RemixRecordScreen";
 import AuthScreen from "../screens/AuthScreen";
-import { apiContract } from "../contracts/api";
+import FirstSessionFlowScreen, {
+  consumePendingRecordIntent,
+} from "../screens/FirstSessionFlowScreen";
+import TrendingScreen from "../screens/TrendingScreen";
+import { isAllowedDeepLink } from "../services/deepLinks";
+import {
+  consumePendingDeepLink,
+  parseDeepLinkTarget,
+  stashPendingDeepLink,
+} from "../services/pendingDeepLink";
 import { navigationIntegration } from "../services/observability";
 import { useAuth } from "../context/AuthContext";
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
+/** Runs inside the tab navigator so navigate("Record") resolves. */
+function HomeWithRecordIntent(props: any) {
+  const navigation = useNavigation<any>();
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    (async () => {
+      const shouldOpenRecord = await consumePendingRecordIntent();
+      if (!cancelled && shouldOpenRecord) {
+        timer = setTimeout(() => {
+          navigation.navigate("Record");
+        }, 80);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [navigation]);
+
+  return <HomeScreen {...props} />;
+}
 
 function MainTabs() {
   return (
@@ -28,6 +66,7 @@ function MainTabs() {
           let iconName: keyof typeof Ionicons.glyphMap = "home";
 
           if (route.name === "Home") iconName = focused ? "home" : "home-outline";
+          else if (route.name === "Trending") iconName = focused ? "flame" : "flame-outline";
           else if (route.name === "Record") iconName = focused ? "radio-button-on" : "radio-button-off";
           else if (route.name === "Feed") iconName = focused ? "play-circle" : "play-circle-outline";
           else if (route.name === "Profile") iconName = focused ? "person" : "person-outline";
@@ -51,7 +90,8 @@ function MainTabs() {
         headerShown: false,
       })}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
+      <Tab.Screen name="Home" component={HomeWithRecordIntent} />
+      <Tab.Screen name="Trending" component={TrendingScreen} />
       <Tab.Screen
         name="Record"
         component={RecordScreen}
@@ -66,20 +106,60 @@ function MainTabs() {
   );
 }
 
+function navigateFromDeepLink(navigationRef: any, url: string) {
+  const target = parseDeepLinkTarget(url);
+  if (!target || !navigationRef?.isReady?.()) return false;
+
+  try {
+    if (target.type === "deep_answer") {
+      navigationRef.navigate("DeepAnswer", { answerId: String(target.answerId) });
+      return true;
+    }
+    if (target.type === "remix") {
+      navigationRef.navigate("RemixRecord", { parentAnswerId: target.parentAnswerId });
+      return true;
+    }
+    if (target.type === "question") {
+      navigationRef.navigate("Main", {
+        screen: "Record",
+        params: { questionId: target.questionId },
+      });
+      return true;
+    }
+    if (target.type === "tab") {
+      navigationRef.navigate("Main", {
+        screen: target.screen,
+        params: target.answerId ? { answerId: target.answerId } : undefined,
+      });
+      return true;
+    }
+  } catch (_) {
+    return false;
+  }
+  return false;
+}
+
 export default function AppNavigator() {
-  const { user } = useAuth();
+  const { user, needsFirstSession, completeFirstSession } = useAuth();
   const navigationRef = useNavigationContainerRef();
+  const canHandleDeepLinks = Boolean(user) && !needsFirstSession;
+  const canHandleRef = useRef(canHandleDeepLinks);
+  canHandleRef.current = canHandleDeepLinks;
+
   const linking: any = {
     prefixes: [
       "five-second://",
+      "exp://",
       "https://5sek.app",
-      "https://app.5sek.local",
+      "https://www.5sek.app",
+      "https://app.5sek.app",
     ] as string[],
     config: {
       screens: {
         Main: {
           screens: {
             Home: "home",
+            Trending: "trending",
             Record: "record",
             Feed: "feed",
             Profile: "profile",
@@ -99,6 +179,57 @@ export default function AppNavigator() {
     enabled: true,
   };
 
+  // Capture cold-start / gated deep links so they survive Auth + FirstSession.
+  useEffect(() => {
+    let cancelled = false;
+
+    const capture = async (url: string | null) => {
+      if (cancelled || !url || !isAllowedDeepLink(url)) return;
+      if (canHandleRef.current && navigationRef.isReady()) {
+        navigateFromDeepLink(navigationRef, url);
+        return;
+      }
+      await stashPendingDeepLink(url);
+    };
+
+    Linking.getInitialURL()
+      .then((url) => capture(url))
+      .catch(() => {});
+
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      capture(url).catch(() => {});
+    });
+
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [navigationRef]);
+
+  // Replay stashed deep link after the user can navigate the full stack.
+  useEffect(() => {
+    if (!canHandleDeepLinks) return;
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    (async () => {
+      const url = await consumePendingDeepLink();
+      if (cancelled || !url) return;
+
+      timer = setTimeout(() => {
+        if (!cancelled) {
+          navigateFromDeepLink(navigationRef, url);
+        }
+      }, 120);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [canHandleDeepLinks, navigationRef]);
+
   return (
     <NavigationContainer
       linking={linking}
@@ -109,6 +240,17 @@ export default function AppNavigator() {
     >
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
+          needsFirstSession ? (
+            <Stack.Screen name="FirstSession">
+              {() => (
+                <FirstSessionFlowScreen
+                  onComplete={async () => {
+                    await completeFirstSession();
+                  }}
+                />
+              )}
+            </Stack.Screen>
+          ) : (
           <>
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="TextAnswer" component={TextAnswerScreen} />
@@ -121,6 +263,7 @@ export default function AppNavigator() {
               options={{ animation: "slide_from_bottom" }}
             />
           </>
+          )
         ) : (
           <Stack.Screen name="Auth" component={AuthScreen} />
         )}

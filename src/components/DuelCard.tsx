@@ -47,13 +47,16 @@ interface DuelCardProps {
   duel: DuelFeedItem;
   currentUserId: number;
   isVisible: boolean;
+  /** Mount native video players only for nearby cells (perf). */
+  mountMedia?: boolean;
   onUpdated?: (duel: DuelFeedItem) => void;
 }
 
-export default function DuelCard({
+function DuelCard({
   duel,
   currentUserId,
   isVisible,
+  mountMedia = true,
   onUpdated,
 }: DuelCardProps) {
   const [localDuel, setLocalDuel] = useState<DuelFeedItem>(duel);
@@ -188,14 +191,18 @@ export default function DuelCard({
             <Text style={styles.sideBadgeText}>A</Text>
           </View>
           {localDuel.video_a_url ? (
-            <Video
-              source={{ uri: localDuel.video_a_url }}
-              style={styles.video}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={isVisible}
-              isLooping
-              isMuted
-            />
+            mountMedia ? (
+              <Video
+                source={{ uri: localDuel.video_a_url }}
+                style={styles.video}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={isVisible}
+                isLooping
+                isMuted
+              />
+            ) : (
+              <View style={[styles.video, { backgroundColor: "#050505" }]} />
+            )
           ) : (
             <View style={styles.textAnswerWrap}>
               <Text style={styles.textAnswerContent} numberOfLines={6}>
@@ -218,14 +225,18 @@ export default function DuelCard({
             <Text style={styles.sideBadgeText}>B</Text>
           </View>
           {localDuel.video_b_url ? (
-            <Video
-              source={{ uri: localDuel.video_b_url }}
-              style={styles.video}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay={isVisible}
-              isLooping
-              isMuted
-            />
+            mountMedia ? (
+              <Video
+                source={{ uri: localDuel.video_b_url }}
+                style={styles.video}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay={isVisible}
+                isLooping
+                isMuted
+              />
+            ) : (
+              <View style={[styles.video, { backgroundColor: "#050505" }]} />
+            )
           ) : (
             <View style={styles.textAnswerWrap}>
               <Text style={styles.textAnswerContent} numberOfLines={6}>
@@ -491,3 +502,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
+
+function areDuelCardPropsEqual(prev: DuelCardProps, next: DuelCardProps) {
+  return (
+    prev.isVisible === next.isVisible &&
+    prev.mountMedia === next.mountMedia &&
+    prev.currentUserId === next.currentUserId &&
+    prev.duel.id === next.duel.id &&
+    prev.duel.votes_a === next.duel.votes_a &&
+    prev.duel.votes_b === next.duel.votes_b &&
+    prev.duel.pct_a === next.duel.pct_a &&
+    prev.duel.pct_b === next.duel.pct_b &&
+    prev.duel.your_vote === next.duel.your_vote &&
+    prev.duel.status === next.duel.status
+  );
+}
+
+export default React.memo(DuelCard, areDuelCardPropsEqual);

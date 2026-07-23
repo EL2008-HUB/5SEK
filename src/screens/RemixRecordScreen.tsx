@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,31 +16,44 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import Timer, { CountdownOverlay } from "../components/Timer";
-import { useAuth } from "../context/AuthContext";
 import { answersApi } from "../services/api";
+import { analytics } from "../services/analytics";
 import { eventTracker } from "../services/eventTracker";
+import {
+  clearUploadDraft,
+  enqueueUploadDraft,
+  getLatestFailedDraft,
+  markUploadFailed,
+} from "../services/uploadQueue";
 import { showAppAlert } from "../utils/alerts";
 
-const { width, height } = Dimensions.get("window");
+const { height } = Dimensions.get("window");
 const MAX_DURATION = 5;
 
-type RemixPhase = "preview" | "countdown" | "recording" | "review" | "uploading" | "done";
+type RemixPhase =
+  | "preview"
+  | "countdown"
+  | "recording"
+  | "review"
+  | "uploading"
+  | "upload_failed"
+  | "done";
 
 export default function RemixRecordScreen({ route, navigation }: any) {
   const {
     parentAnswerId,
     parentVideoUrl,
     questionText,
-    questionId,
     username,
     chainDepth,
+    autoStart = false,
   } = route?.params || {};
 
-  const { user } = useAuth();
   const cameraRef = useRef<any>(null);
   const hasStartedRef = useRef(false);
+  const autoStartConsumedRef = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState<"front" | "back">("front");
+  const [facing] = useState<"front" | "back">("front");
 
   const [phase, setPhase] = useState<RemixPhase>("preview");
   const [countdownNum, setCountdownNum] = useState(3);
@@ -48,8 +61,19 @@ export default function RemixRecordScreen({ route, navigation }: any) {
   const [recordStartTime, setRecordStartTime] = useState(0);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [failedUploadDraft, setFailedUploadDraft] = useState<any>(null);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    getLatestFailedDraft("remix").then((draft) => {
+      if (!draft) return;
+      if (parentAnswerId && draft.parentAnswerId && draft.parentAnswerId !== parentAnswerId) {
+        return;
+      }
+      setFailedUploadDraft(draft);
+    }).catch(() => {});
+  }, [parentAnswerId]);
 
   // Pulse animation for record button
   useEffect(() => {
@@ -120,6 +144,25 @@ export default function RemixRecordScreen({ route, navigation }: any) {
     hasStartedRef.current = false;
   };
 
+  const handleInstantRemix = async () => {
+    const ok = await ensurePermission();
+    if (!ok) {
+      showAppAlert("Camera needed", "Enable camera access to record your remix.");
+      return;
+    }
+    Vibration.vibrate(18);
+    setCountdownNum(0);
+    setRecordTimer(MAX_DURATION);
+    hasStartedRef.current = false;
+    setPhase("recording");
+  };
+
+  useEffect(() => {
+    if (!autoStart || autoStartConsumedRef.current || phase !== "preview") return;
+    autoStartConsumedRef.current = true;
+    handleInstantRemix();
+  }, [autoStart, phase, permission?.granted]);
+
   const startRecording = async () => {
     if (!cameraRef.current) return;
     setRecordTimer(MAX_DURATION);
@@ -151,42 +194,47 @@ export default function RemixRecordScreen({ route, navigation }: any) {
     }
   };
 
-  const handleUploadRemix = async () => {
-    if (!recordedUri || uploading) return;
+  const handleUploadRemix = async (videoUri?: string | null, attempt = 1) => {
+    const uri = videoUri || recordedUri;
+    if (!uri) return;
+    if (attempt === 1 && uploading) return;
     setPhase("uploading");
     setUploading(true);
+    setRecordedUri(uri);
 
     const responseTime = Math.min((Date.now() - recordStartTime) / 1000, MAX_DURATION);
+    const draftId = `remix-${parentAnswerId || "unknown"}-${Date.now()}`;
+
+    await enqueueUploadDraft({
+      id: draftId,
+      questionId: 0,
+      mediaUri: uri,
+      answerType: "video",
+      responseTime: parseFloat(responseTime.toFixed(1)),
+      screen: "remix",
+      failedAt: null,
+      parentAnswerId: parentAnswerId || null,
+    });
 
     try {
-      // Upload video first
-      const uploadResult = await answersApi.upload(
-        user?.id || 0,
-        questionId || 1,
-        recordedUri,
+      const remixResult = await answersApi.uploadRemix(
+        parentAnswerId,
+        uri,
         parseFloat(responseTime.toFixed(1)),
         { answer_type: "video" }
       );
 
-      const videoUrl = uploadResult.data?.video_url;
-
-      // Now create the remix
-      const remixResult = await answersApi.createRemix(parentAnswerId, {
-        video_url: videoUrl,
-        answer_type: "video",
-        response_time: parseFloat(responseTime.toFixed(1)),
-      });
-
-      // Track event
       eventTracker.remixCreated(
         remixResult.data?.id || 0,
         parentAnswerId,
         remixResult.data?.chain_depth || (chainDepth || 0) + 1
       );
 
+      await clearUploadDraft(draftId);
+      setFailedUploadDraft(null);
+      analytics.uploadCompleted("remix", { parent_answer_id: parentAnswerId || null });
       setPhase("done");
 
-      // Show success and go back to feed
       setTimeout(() => {
         navigation.goBack();
         showAppAlert("Remix posted! 🔥", "Your remix is now in the chain.");
@@ -196,18 +244,74 @@ export default function RemixRecordScreen({ route, navigation }: any) {
       const serverError = error?.response?.data?.error;
 
       if (serverError === "self_remix") {
+        await clearUploadDraft(draftId);
         showAppAlert("Can't remix yourself", "You can only remix other people's answers.");
-      } else if (serverError === "already_remixed") {
-        showAppAlert("Already remixed", "You've already remixed this answer.");
-      } else if (serverError === "max_depth_reached") {
-        showAppAlert("Chain limit", "This chain has reached the maximum depth.");
-      } else {
-        showAppAlert("Upload failed", "Could not post your remix. Try again.");
+        setPhase("review");
+        return;
       }
-      setPhase("review");
+      if (serverError === "already_remixed") {
+        await clearUploadDraft(draftId);
+        showAppAlert("Already remixed", "You've already remixed this answer.");
+        setPhase("review");
+        return;
+      }
+      if (serverError === "max_depth_reached") {
+        await clearUploadDraft(draftId);
+        showAppAlert("Chain limit", "This chain has reached the maximum depth.");
+        setPhase("review");
+        return;
+      }
+
+      const isNetworkish =
+        !error?.response ||
+        error?.code === "ECONNABORTED" ||
+        error?.message?.includes?.("Network");
+
+      if (attempt < 2 && isNetworkish) {
+        analytics.uploadRetry("remix", {
+          parent_answer_id: parentAnswerId || null,
+          auto: true,
+          attempt,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        await clearUploadDraft(draftId);
+        return handleUploadRemix(uri, attempt + 1);
+      }
+
+      await markUploadFailed(draftId);
+      const latestDraft = await getLatestFailedDraft("remix");
+      setFailedUploadDraft(latestDraft);
+      analytics.uploadFailed("remix", {
+        parent_answer_id: parentAnswerId || null,
+        attempt,
+      });
+      setPhase("upload_failed");
     } finally {
       setUploading(false);
     }
+  };
+
+  const retryFailedUpload = async () => {
+    const uri = failedUploadDraft?.mediaUri || recordedUri;
+    if (!uri) return;
+    analytics.uploadRetry("remix", {
+      parent_answer_id: failedUploadDraft?.parentAnswerId || parentAnswerId || null,
+    });
+    if (failedUploadDraft?.id) {
+      await clearUploadDraft(failedUploadDraft.id);
+    }
+    setRecordedUri(uri);
+    await handleUploadRemix(uri);
+  };
+
+  const discardFailedUpload = async () => {
+    if (failedUploadDraft?.id) {
+      await clearUploadDraft(failedUploadDraft.id);
+    }
+    setFailedUploadDraft(null);
+    setRecordedUri(null);
+    setPhase("preview");
+    hasStartedRef.current = false;
   };
 
   const handleRetake = () => {
@@ -294,7 +398,7 @@ export default function RemixRecordScreen({ route, navigation }: any) {
         )}
 
         {/* Review recorded video */}
-        {phase === "review" && recordedUri && (
+        {(phase === "review" || phase === "upload_failed") && recordedUri && (
           <Video
             source={{ uri: recordedUri }}
             style={styles.camera}
@@ -314,6 +418,14 @@ export default function RemixRecordScreen({ route, navigation }: any) {
               <Ionicons name="videocam" size={40} color="#00E5FF" />
               <Text style={styles.previewText}>Record your version</Text>
               <Text style={styles.previewSubtext}>Show them how it's done ⚡</Text>
+              {failedUploadDraft?.mediaUri ? (
+                <TouchableOpacity style={styles.resumeCard} onPress={retryFailedUpload} activeOpacity={0.9}>
+                  <Text style={styles.resumeTitle}>Upload still pending</Text>
+                  <Text style={styles.resumeBody}>
+                    Retry the last remix from where the network failed.
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </LinearGradient>
           </View>
         )}
@@ -323,6 +435,14 @@ export default function RemixRecordScreen({ route, navigation }: any) {
           <View style={styles.uploadingOverlay}>
             <ActivityIndicator size="large" color="#00E5FF" />
             <Text style={styles.uploadingText}>Posting remix...</Text>
+          </View>
+        )}
+
+        {/* Upload failed overlay copy */}
+        {phase === "upload_failed" && (
+          <View style={styles.failedBanner} pointerEvents="none">
+            <Text style={styles.failedTitle}>Couldn't post</Text>
+            <Text style={styles.failedBody}>Your remix is still here — retry or discard.</Text>
           </View>
         )}
 
@@ -367,7 +487,7 @@ export default function RemixRecordScreen({ route, navigation }: any) {
               <Text style={styles.retakeText}>Retake</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.postButton} onPress={handleUploadRemix}>
+            <TouchableOpacity style={styles.postButton} onPress={() => handleUploadRemix()}>
               <LinearGradient
                 colors={["#00E5FF", "#00FF88"]}
                 start={{ x: 0, y: 0 }}
@@ -376,6 +496,26 @@ export default function RemixRecordScreen({ route, navigation }: any) {
               >
                 <Ionicons name="arrow-up" size={22} color="#000" />
                 <Text style={styles.postText}>Post Remix</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {phase === "upload_failed" && (
+          <View style={styles.reviewActions}>
+            <TouchableOpacity style={styles.retakeButton} onPress={discardFailedUpload}>
+              <Text style={styles.retakeText}>Discard</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.postButton} onPress={retryFailedUpload}>
+              <LinearGradient
+                colors={["#FF5A7A", "#FF3366"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.postButtonGradient}
+              >
+                <Ionicons name="refresh" size={22} color="#FFF" />
+                <Text style={[styles.postText, { color: "#FFF" }]}>Retry</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -524,6 +664,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
+  resumeCard: {
+    marginTop: 18,
+    marginHorizontal: 20,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: "rgba(255,173,51,0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(255,173,51,0.25)",
+  },
+  resumeTitle: {
+    color: "#FFF3D7",
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  resumeBody: {
+    color: "rgba(255,243,215,0.8)",
+    fontSize: 12,
+    fontWeight: "700",
+    textAlign: "center",
+    lineHeight: 17,
+  },
   recordingIndicator: {
     position: "absolute",
     top: 16,
@@ -559,6 +722,29 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: 16,
     fontWeight: "700",
+  },
+  failedBanner: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 12,
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: "rgba(9,12,23,0.88)",
+    borderWidth: 1,
+    borderColor: "rgba(255,90,122,0.35)",
+  },
+  failedTitle: {
+    color: "#FFF",
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  failedBody: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
   },
   doneOverlay: {
     width: "100%",

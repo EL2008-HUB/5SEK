@@ -13,6 +13,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { usePush } from "../context/PushContext";
 import { answersApi, countryApi, moderationApi, paymentsApi, questionsApi } from "../services/api";
@@ -20,6 +21,9 @@ import { analytics } from "../services/analytics";
 import { buildFeedShareUrl } from "../services/deepLinks";
 import AdminConsole from "../components/AdminConsole";
 import AccountOperations from "../components/AccountOperations";
+import AccountRequiredModal from "../components/AccountRequiredModal";
+import StatePanel from "../components/StatePanel";
+import PushOptInBanner from "../components/PushOptInBanner";
 
 const { width } = Dimensions.get("window");
 
@@ -70,8 +74,9 @@ interface LearnedPattern {
 }
 
 export default function ProfileScreen() {
-  const { user, updateProfile } = useAuth();
-  const { permission: pushPermission, expoPushToken, sendTestPush } = usePush();
+  const navigation = useNavigation<any>();
+  const { user, updateProfile, isGuest, logout } = useAuth();
+  const { permission: pushPermission, expoPushToken, sendTestPush, requestEnablePush } = usePush();
   const [answers, setAnswers] = useState<UserAnswer[]>([]);
   const [loadingAnswers, setLoadingAnswers] = useState(true);
   const [selectedCountry, setSelectedCountry] = useState("GLOBAL");
@@ -82,6 +87,7 @@ export default function ProfileScreen() {
   const [showAgePicker, setShowAgePicker] = useState(false);
   const [showInterestsPicker, setShowInterestsPicker] = useState(false);
   const [blockedUsers, setBlockedUsers] = useState<Array<{ id: number; username: string; created_at: string }>>([]);
+  const [accountRequired, setAccountRequired] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -215,6 +221,28 @@ export default function ProfileScreen() {
             </LinearGradient>
           </View>
           <Text style={styles.username}>@{profileUser.username}</Text>
+          {isGuest ? (
+            <TouchableOpacity
+              style={styles.guestBanner}
+              onPress={() => setAccountRequired(true)}
+              activeOpacity={0.9}
+            >
+              <LinearGradient
+                colors={["rgba(110,237,193,0.18)", "rgba(72,217,181,0.08)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.guestBannerInner}
+              >
+                <View style={styles.guestBannerCopy}>
+                  <Text style={styles.guestBannerTitle}>You're browsing as a guest</Text>
+                  <Text style={styles.guestBannerBody}>
+                    Create an account to keep your streak, comments, and profile.
+                  </Text>
+                </View>
+                <Text style={styles.guestBannerCta}>Sign up</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : null}
           {personalizationParts.length > 0 ? (
             <View style={styles.personalizationBadge}>
               <Text style={styles.personalizationText}>{personalizationParts.join(" · ")}</Text>
@@ -265,17 +293,44 @@ export default function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Push Notifications</Text>
+          <PushOptInBanner />
           <Text style={styles.sectionHint}>
             {pushPermission === "granted"
               ? expoPushToken
-                ? "Registered on this device."
+                ? "Registered on this device. Daily question reminders are scheduled."
                 : "Permission granted, waiting for token sync."
               : pushPermission === "unsupported"
               ? "Requires a development or production build on a physical device."
               : pushPermission === "denied"
               ? "Notifications are denied for this app."
-              : "Checking notification permissions."}
+              : "Enable quietly when you're ready — we won't ask on launch."}
           </Text>
+          {pushPermission !== "granted" && pushPermission !== "unsupported" ? (
+            <TouchableOpacity
+              style={styles.answerCard}
+              onPress={() =>
+                requestEnablePush()
+                  .then((ok) => {
+                    if (!ok) {
+                      Alert.alert(
+                        "Notifications",
+                        "If blocked, open system Settings to allow notifications for 5SEK."
+                      );
+                    }
+                  })
+                  .catch(() => {})
+              }
+            >
+              <View style={styles.answerIcon}>
+                <Ionicons name="notifications-outline" size={20} color="#6EEDC1" />
+              </View>
+              <View style={styles.answerInfo}>
+                <Text style={styles.answerQuestion}>Enable notifications</Text>
+                <Text style={styles.answerDate}>Streak + daily question reminders</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#444" />
+            </TouchableOpacity>
+          ) : null}
           {expoPushToken ? (
             <View style={styles.answerCard}>
               <View style={styles.answerIcon}>
@@ -442,15 +497,16 @@ export default function ProfileScreen() {
           <Text style={styles.sectionTitle}>My Answers</Text>
 
           {loadingAnswers ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>Loading answers...</Text>
-            </View>
+            <StatePanel compact variant="loading" message="Loading your answers…" />
           ) : answers.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="videocam-outline" size={48} color="#333" />
-              <Text style={styles.emptyText}>No answers yet</Text>
-              <Text style={styles.emptySubtext}>Record your first 5-second answer.</Text>
-            </View>
+            <StatePanel
+              compact
+              variant="empty"
+              title="No answers yet"
+              message="Record your first 5-second answer and it will show up here."
+              primaryLabel="Record now"
+              onPrimaryPress={() => navigation.navigate("Record")}
+            />
           ) : (
             answers.map((item) => (
               <View key={item.id} style={styles.answerCard}>
@@ -471,6 +527,17 @@ export default function ProfileScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <AccountRequiredModal
+        visible={accountRequired}
+        title="Create your 5SEK account"
+        message="Guests can explore and answer. Sign up to keep your streak, comment, and save your profile."
+        onCreateAccount={async () => {
+          setAccountRequired(false);
+          await logout();
+        }}
+        onDismiss={() => setAccountRequired(false)}
+      />
     </LinearGradient>
   );
 }
@@ -496,6 +563,41 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: "#FFF", fontSize: 32, fontWeight: "800" },
   username: { color: "#FFF", fontSize: 22, fontWeight: "700" },
+  guestBanner: {
+    width: width - 48,
+    marginTop: 14,
+    borderRadius: 16,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(110,237,193,0.28)",
+  },
+  guestBannerInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  guestBannerCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  guestBannerTitle: {
+    color: "#E8FFF6",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  guestBannerBody: {
+    color: "rgba(229,240,248,0.62)",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+  },
+  guestBannerCta: {
+    color: "#6EEDC1",
+    fontSize: 13,
+    fontWeight: "900",
+  },
   personalizationBadge: {
     marginTop: 8,
     backgroundColor: "rgba(255, 51, 102, 0.1)",

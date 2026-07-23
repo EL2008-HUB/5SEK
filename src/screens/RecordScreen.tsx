@@ -44,6 +44,7 @@ type RecordPhase =
   | "recording"
   | "preview"
   | "uploading"
+  | "upload_failed"
   | "reward";
 
 type AnswerMode = "video" | "audio" | "text" | "reaction";
@@ -490,8 +491,9 @@ export default function RecordScreen({ route, navigation }: any) {
     }
   };
 
-  const handleUpload = async (videoUri: string) => {
+  const handleUpload = async (videoUri: string, attempt = 1) => {
     setPhase("uploading");
+    setRecordedUri(videoUri);
 
     const actualTimeUsed = (Date.now() - recordStartTime) / 1000;
     const responseTime = Math.min(actualTimeUsed, MAX_DURATION);
@@ -535,12 +537,9 @@ export default function RecordScreen({ route, navigation }: any) {
       setPhase("reward");
     } catch (error: any) {
       console.error("Upload error:", error);
-      await markUploadFailed(draftId);
-      const latestDraft = await getLatestFailedDraft("record");
-      setFailedUploadDraft(latestDraft);
-      analytics.uploadFailed("record", { answer_type: "video", question_id: question?.id || null });
 
       if (error?.response?.status === 403) {
+        await clearUploadDraft(draftId);
         const errData = error.response.data;
         setDailyUsage({
           used: errData.answers_used || 5,
@@ -562,16 +561,52 @@ export default function RecordScreen({ route, navigation }: any) {
         return;
       }
 
-      showAppAlert("Error", "Failed to upload. Try again.");
-      setPhase("idle");
+      const isNetworkish =
+        !error?.response ||
+        error?.code === "ECONNABORTED" ||
+        error?.message?.includes?.("Network");
+
+      if (attempt < 2 && isNetworkish) {
+        analytics.uploadRetry("record", {
+          question_id: question?.id || null,
+          auto: true,
+          attempt,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        await clearUploadDraft(draftId);
+        return handleUpload(videoUri, attempt + 1);
+      }
+
+      await markUploadFailed(draftId);
+      const latestDraft = await getLatestFailedDraft("record");
+      setFailedUploadDraft(latestDraft);
+      analytics.uploadFailed("record", {
+        answer_type: "video",
+        question_id: question?.id || null,
+        attempt,
+      });
+      setPhase("upload_failed");
     }
   };
 
   const retryFailedUpload = async () => {
-    if (!failedUploadDraft?.mediaUri) return;
-    analytics.uploadRetry("record", { question_id: failedUploadDraft.questionId });
-    await clearUploadDraft(failedUploadDraft.id);
-    await handleUpload(failedUploadDraft.mediaUri);
+    const uri = failedUploadDraft?.mediaUri || recordedUri;
+    if (!uri) return;
+    analytics.uploadRetry("record", { question_id: failedUploadDraft?.questionId || question?.id || null });
+    if (failedUploadDraft?.id) {
+      await clearUploadDraft(failedUploadDraft.id);
+    }
+    setRecordedUri(uri);
+    await handleUpload(uri);
+  };
+
+  const discardFailedUpload = async () => {
+    if (failedUploadDraft?.id) {
+      await clearUploadDraft(failedUploadDraft.id);
+    }
+    setFailedUploadDraft(null);
+    setRecordedUri(null);
+    setPhase("idle");
   };
 
   const toggleFacing = () => {
@@ -994,6 +1029,56 @@ export default function RecordScreen({ route, navigation }: any) {
           <View style={styles.uploadingCard}>
             <Text style={styles.uploadingTitle}>Posting…</Text>
             <Text style={styles.uploadingBody}>Locking your answer into the feed.</Text>
+          </View>
+        </View>
+      )}
+
+      {phase === "upload_failed" && recordedUri && (
+        <View style={styles.previewOverlay}>
+          <Video
+            source={{ uri: recordedUri }}
+            style={styles.previewVideo}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay
+            isLooping
+            isMuted={false}
+          />
+
+          <LinearGradient
+            colors={["rgba(0,0,0,0.35)", "rgba(9,12,23,0.94)"]}
+            style={styles.previewGradient}
+          />
+
+          <View style={styles.previewContent}>
+            <Text style={styles.previewTitle}>Couldn't post</Text>
+            <Text style={styles.previewBody}>
+              Your take is still here. Retry when the connection is back — nothing is lost.
+            </Text>
+
+            <View style={styles.previewActionsRow}>
+              <TouchableOpacity
+                style={styles.tryAgainBtn}
+                activeOpacity={0.88}
+                onPress={discardFailedUpload}
+              >
+                <Text style={styles.tryAgainText}>Discard</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.postBtn}
+                activeOpacity={0.92}
+                onPress={retryFailedUpload}
+              >
+                <LinearGradient
+                  colors={["#FF5A7A", "#FF3366"]}
+                  style={styles.postBtnGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Text style={styles.postBtnText}>Retry</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}

@@ -7,12 +7,15 @@ import {
   TouchableOpacity,
   Dimensions,
   Animated,
+  AppState,
+  AppStateStatus,
 } from "react-native";
 import { Video, ResizeMode, AVPlaybackStatus } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import ShareOverlay from "./ShareOverlay";
 import RemixChainView from "./RemixChainView";
+import ChaosMeter, { ChaosThreadMeta } from "./ChaosMeter";
 import CommentSheet from "./CommentSheet";
 import { answersApi, moderationApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
@@ -50,21 +53,34 @@ interface VideoCardProps {
       label?: string;
       today_answers?: number;
     };
+    heat_overlay?: {
+      label?: string;
+      sublabel?: string | null;
+      intensity?: "low" | "medium" | "high";
+      variant?: string;
+    } | null;
+    chaos_thread?: ChaosThreadMeta | null;
   };
   isVisible: boolean;
+  /** Mount native video player only for nearby cells (perf). */
+  mountMedia?: boolean;
   position?: number; // FIX 2: feed position for analytics
 }
 
-export default function VideoCard({ video, isVisible, position }: VideoCardProps) {
+export function VideoCard({ video, isVisible, mountMedia = true, position }: VideoCardProps) {
   const videoRef = useRef<Video>(null);
   const navigation = useNavigation<any>();
   const isTextAnswer = video.answer_type === "text" || video.answer_type === "reaction";
   const isAudioAnswer = video.answer_type === "audio";
+  const shouldMountMedia = mountMedia && !isTextAnswer;
   const [isPlaying, setIsPlaying] = useState(false);
   const [showShareOverlay, setShowShareOverlay] = useState(false);
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(video.likes || 0);
   const [remixCount, setRemixCount] = useState(0);
+  const [chaosThread, setChaosThread] = useState<ChaosThreadMeta | null>(
+    video.chaos_thread || null
+  );
   const [showRemixPrompt, setShowRemixPrompt] = useState(false);
   const [showChainModal, setShowChainModal] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -74,10 +90,29 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
 
   // 🔥 MICRO-UPGRADE 2: Progress bar (0 → 5s)
   const progressAnim = useRef(new Animated.Value(0)).current;
-  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
+  const chaosPulseAnim = useRef(new Animated.Value(1)).current;
   // 🔥 MICRO-UPGRADE 4: Replay counter
   const replayCountRef = useRef(0);
+  const chainHeat = video.chaos_thread?.chain_heat || video.chaos_thread?.score || 0;
+  const isHotChain =
+    Boolean(video.chaos_thread) &&
+    video.chaos_thread?.level !== "LOW" &&
+    chainHeat >= 45;
+
+  React.useEffect(() => {
+    if (!isVisible || !isHotChain) return;
+    if (chainHeat >= 80) {
+      try { Haptics?.impactAsync?.(Haptics.ImpactFeedbackStyle.Heavy); } catch (_) {}
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(chaosPulseAnim, { toValue: 1.035, duration: 620, useNativeDriver: true }),
+        Animated.timing(chaosPulseAnim, { toValue: 1, duration: 620, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isVisible, isHotChain, chainHeat, chaosPulseAnim]);
 
   // Autoplay when visible (TikTok behavior)
   React.useEffect(() => {
@@ -107,7 +142,7 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
       }
     }
 
-    if (isTextAnswer) return;
+    if (isTextAnswer || !shouldMountMedia) return;
     if (!videoRef.current) return;
 
     if (isVisible) {
@@ -128,7 +163,27 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
       setIsPlaying(false);
       progressAnim.setValue(0);
     }
-  }, [isTextAnswer, isVisible]);
+  }, [isTextAnswer, isVisible, shouldMountMedia]);
+
+  React.useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (isTextAnswer || !shouldMountMedia || !videoRef.current) return;
+
+      if (nextState !== "active") {
+        videoRef.current.pauseAsync().catch(() => {});
+        setIsPlaying(false);
+        return;
+      }
+
+      if (isVisible) {
+        videoRef.current.playAsync().catch(() => {});
+        setIsPlaying(true);
+      }
+    };
+
+    const subscription = AppState.addEventListener("change", handleAppStateChange);
+    return () => subscription.remove();
+  }, [isTextAnswer, isVisible, shouldMountMedia]);
 
   // 🔥 MICRO-UPGRADE 1: Hold frame + MICRO-UPGRADE 4: replay boost
   const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
@@ -187,12 +242,21 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
     };
   }, [video.answer_type, video.id]);
 
-  // Fetch remix count
+  // Fetch remix count only when the card is on-screen (avoid N+1 on scroll).
   React.useEffect(() => {
+    if (!isVisible) return;
+    let cancelled = false;
     answersApi.getRemixInfo(video.id)
-      .then((res) => setRemixCount(res.data?.remix_count || 0))
+      .then((res) => {
+        if (cancelled) return;
+        setRemixCount(res.data?.remix_count || 0);
+        if (res.data?.chaos_thread) setChaosThread(res.data.chaos_thread);
+      })
       .catch(() => {});
-  }, [video.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [video.id, isVisible]);
 
   React.useEffect(() => {
     setLikeCount(video.likes || 0);
@@ -236,6 +300,11 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
   const tag = vibeTag();
   const hookLabel = video.hook_label || `${tag.emoji} ${tag.text}`;
   const socialLabel = video.social_label || video.social_proof?.label || null;
+  const chaosJoin = chaosThread?.join_overlay || video.chaos_thread?.join_overlay || null;
+  const chaosReplyCount =
+    chaosJoin?.reply_count ??
+    ((chaosThread?.joined_count ?? chaosThread?.remix_count ?? video.chaos_thread?.remix_count ?? 0) +
+      (chaosThread?.comment_count ?? video.chaos_thread?.comment_count ?? 0));
   const textAnswerBody = video.text_content || "";
   const mediaUri = video.video_url || "";
   const reportAnswer = () => {
@@ -316,7 +385,7 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
             </View>
             <Text style={styles.textAnswerBody}>{textAnswerBody}</Text>
           </LinearGradient>
-        ) : (
+        ) : shouldMountMedia ? (
           <>
             <Video
               ref={videoRef}
@@ -327,6 +396,12 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
               shouldPlay={false}
               isMuted={false}
               onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+              onLoad={() => {
+                if (isVisible && videoRef.current) {
+                  videoRef.current.playAsync().catch(() => {});
+                  setIsPlaying(true);
+                }
+              }}
             />
 
             {/* 🔥 MICRO-UPGRADE 2: Subtle progress bar */}
@@ -346,6 +421,8 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
               </View>
             )}
           </>
+        ) : (
+          <View style={[styles.video, styles.videoPlaceholder]} />
         )}
 
         {isAudioAnswer && (
@@ -403,6 +480,24 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
             </View>
           )}
 
+          {video.heat_overlay?.label && (
+            <View
+              style={[
+                styles.heatOverlayPill,
+                video.heat_overlay.intensity === "high" && styles.heatOverlayPillHot,
+              ]}
+            >
+              <Text style={styles.heatOverlayText} numberOfLines={1}>
+                {video.heat_overlay.label}
+              </Text>
+              {video.heat_overlay.sublabel ? (
+                <Text style={styles.heatOverlaySubtext} numberOfLines={1}>
+                  {video.heat_overlay.sublabel}
+                </Text>
+              ) : null}
+            </View>
+          )}
+
           {/* Remix badge */}
           {video.is_remix && (
             <View style={styles.remixBadge}>
@@ -413,7 +508,21 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
             </View>
           )}
 
-          {/* 🔥 FIX 2: Chain visibility — clickable remix count */}
+          {/* Chaos thread badge (feed) */}
+          {video.chaos_thread &&
+            video.chaos_thread.level !== "LOW" && (
+              <TouchableOpacity
+                style={styles.chaosBadge}
+                onPress={() => setShowChainModal(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.chaosBadgeText} numberOfLines={1}>
+                  {video.chaos_thread.label}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+          {/* Chain visibility — clickable remix count */}
           {remixCount > 0 && (
             <TouchableOpacity
               style={styles.chainBadge}
@@ -426,6 +535,42 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
               </Text>
               <Ionicons name="chevron-forward" size={12} color="rgba(0,229,255,0.6)" />
             </TouchableOpacity>
+          )}
+
+          {chaosThread && chaosThread.level !== "LOW" && (
+            <ChaosMeter chaos={chaosThread} compact />
+          )}
+
+          {isHotChain && (
+            <Animated.View style={{ transform: [{ scale: chaosPulseAnim }] }}>
+              <TouchableOpacity
+                style={[
+                  styles.joinChaosCard,
+                  chainHeat >= 90 && styles.joinChaosCardHot,
+                ]}
+                activeOpacity={0.88}
+                onPress={() => setShowChainModal(true)}
+              >
+                <View style={styles.joinChaosPreviewRow}>
+                  {(chaosJoin?.blurred_previews || [{ answer_id: 1 }, { answer_id: 2 }, { answer_id: 3 }])
+                    .slice(0, 3)
+                    .map((preview: any, idx: number) => (
+                      <View key={`${preview.answer_id || idx}`} style={styles.blurredPreviewDot}>
+                        <Ionicons name="eye-off" size={13} color="rgba(255,255,255,0.78)" />
+                      </View>
+                    ))}
+                </View>
+                <View style={styles.joinChaosCopy}>
+                  <Text style={styles.joinChaosTitle}>
+                    {video.chaos_thread?.user_started_this ? "YOU STARTED THIS" : "JOIN THE CHAOS"}
+                  </Text>
+                  <Text style={styles.joinChaosSub} numberOfLines={1}>
+                    {chaosReplyCount} replies - {chaosJoin?.countdown_seconds ? `${Math.ceil(chaosJoin.countdown_seconds / 60)}m left` : "live now"}
+                  </Text>
+                </View>
+                <Ionicons name="flash" size={18} color="#FFF" />
+              </TouchableOpacity>
+            </Animated.View>
           )}
 
           {/* Question */}
@@ -519,12 +664,15 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
                   questionId: video.question_id,
                   username: video.username,
                   chainDepth: video.chain_depth || 0,
+                  autoStart: true,
                 });
               }}
             >
               <Ionicons name="git-compare-outline" size={28} color="#00E5FF" />
               <Text style={[styles.sideButtonText, { color: "#00E5FF" }]}>
-                {remixCount > 0 ? `${remixCount}` : "Remix"}
+                {remixCount > 0
+                  ? chaosThread?.continue_chain_cta?.replace("⚡ ", "") || `${remixCount}`
+                  : "Chain"}
               </Text>
             </TouchableOpacity>
           )}
@@ -555,6 +703,7 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
                 questionId: video.question_id,
                 username: video.username,
                 chainDepth: video.chain_depth || 0,
+                autoStart: true,
               });
             }}
           >
@@ -583,6 +732,7 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
                 questionId: video.question_id,
                 username: video.username,
                 chainDepth: video.chain_depth || 0,
+                autoStart: true,
               });
             }}
           />
@@ -599,6 +749,19 @@ export default function VideoCard({ video, isVisible, position }: VideoCardProps
   );
 }
 
+function areVideoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps) {
+  return (
+    prev.isVisible === next.isVisible &&
+    prev.mountMedia === next.mountMedia &&
+    prev.position === next.position &&
+    prev.video.id === next.video.id &&
+    prev.video.likes === next.video.likes &&
+    prev.video.video_url === next.video.video_url
+  );
+}
+
+export default React.memo(VideoCard, areVideoCardPropsEqual);
+
 const styles = StyleSheet.create({
   container: {
     width: width,
@@ -612,6 +775,9 @@ const styles = StyleSheet.create({
   video: {
     width: "100%",
     height: "100%",
+  },
+  videoPlaceholder: {
+    backgroundColor: "#050505",
   },
   textAnswerCanvas: {
     width: "100%",
@@ -754,6 +920,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
+  heatOverlayPill: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    maxWidth: width * 0.68,
+  },
+  heatOverlayPillHot: {
+    backgroundColor: "rgba(255, 51, 102, 0.2)",
+    borderColor: "rgba(255, 186, 73, 0.45)",
+  },
+  heatOverlayText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  heatOverlaySubtext: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 2,
+  },
   questionText: {
     color: "#FFF",
     fontSize: 18,
@@ -856,6 +1048,22 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0.5,
   },
+  chaosBadge: {
+    alignSelf: "flex-start",
+    marginBottom: 6,
+    backgroundColor: "rgba(255, 23, 68, 0.2)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: "rgba(255, 109, 0, 0.45)",
+    maxWidth: width * 0.7,
+  },
+  chaosBadgeText: {
+    color: "#FF6D00",
+    fontSize: 11,
+    fontWeight: "800",
+  },
   chainBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -873,6 +1081,53 @@ const styles = StyleSheet.create({
     color: "#00E5FF",
     fontSize: 12,
     fontWeight: "700",
+  },
+  joinChaosCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 9,
+    maxWidth: width * 0.72,
+    marginBottom: 9,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 109, 0, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 109, 0, 0.42)",
+  },
+  joinChaosCardHot: {
+    backgroundColor: "rgba(255, 23, 68, 0.24)",
+    borderColor: "rgba(255, 186, 73, 0.62)",
+  },
+  joinChaosPreviewRow: {
+    flexDirection: "row",
+    marginRight: 1,
+  },
+  blurredPreviewDot: {
+    width: 25,
+    height: 25,
+    borderRadius: 13,
+    marginLeft: -4,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  joinChaosCopy: {
+    flexShrink: 1,
+  },
+  joinChaosTitle: {
+    color: "#FFF",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  joinChaosSub: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 2,
   },
   remixPrompt: {
     position: "absolute",

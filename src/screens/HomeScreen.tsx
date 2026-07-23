@@ -1,11 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
-  ActivityIndicator,
   Platform,
   Animated,
 } from "react-native";
@@ -18,8 +16,13 @@ import { analytics } from "../services/analytics";
 import DropBanner from "../components/DropBanner";
 import StreakBar from "../components/StreakBar";
 import FloatingPrompt from "../components/FloatingPrompt";
+import StatePanel from "../components/StatePanel";
+import PushOptInBanner from "../components/PushOptInBanner";
+import { loadDailyQuestionCache, saveDailyQuestionCache } from "../services/questionCache";
+import { Colors, GlobalStyles, Shadows } from "../theme";
 
-const { width, height } = Dimensions.get("window");
+/** Focused home: one question + one CTA + feed link (reduces attention competition). */
+const COMPACT_HOME = false;
 
 // Country display info
 const COUNTRY_FLAGS: Record<string, { flag: string; name: string }> = {
@@ -70,7 +73,9 @@ export default function HomeScreen({ navigation }: any) {
   const [question, setQuestion] = useState<Question | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiOffline, setApiOffline] = useState(false);
+  const [servingCached, setServingCached] = useState(false);
   const [userCountry, setUserCountry] = useState("GLOBAL");
+  const lastFetchAtRef = useRef(0);
   const [trendingBadge, setTrendingBadge] = useState<string | null>(null);
   const [isHot, setIsHot] = useState(false);
   const [hotQuestions, setHotQuestions] = useState<DiscoveryQuestion[]>([]);
@@ -81,6 +86,36 @@ export default function HomeScreen({ navigation }: any) {
   const [trendingPulse] = useState(new Animated.Value(1));
   const [hotGlow] = useState(new Animated.Value(0));
   const [fomoFade] = useState(new Animated.Value(0));
+
+  /* ---------- Ambient Glow Animations ---------- */
+  const breatheAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(breatheAnim, {
+          toValue: 1,
+          duration: 5000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(breatheAnim, {
+          toValue: 0,
+          duration: 5000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [breatheAnim]);
+
+  const glowScale1 = breatheAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.25],
+  });
+
+  const glowScale2 = breatheAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1.2, 0.95],
+  });
 
   const goRecord = (params?: any) => {
     const q = params?.question;
@@ -160,18 +195,41 @@ export default function HomeScreen({ navigation }: any) {
     }
   }, [question]);
 
-  const fetchDaily = async () => {
-    setLoading(true);
+  const fetchDaily = async (opts?: { soft?: boolean }) => {
+    const soft = Boolean(opts?.soft);
+    if (!soft) {
+      setLoading(true);
+    }
     setApiOffline(false);
 
     const country = await countryApi.loadCountry();
     setUserCountry(country);
+
+    // Instant hydrate from cache while network loads.
+    if (!question) {
+      const cached = await loadDailyQuestionCache(country);
+      if (cached?.question) {
+        setQuestion(cached.question as Question);
+        setTrendingBadge(cached.trendingBadge ?? null);
+        setIsHot(Boolean(cached.isHot));
+        setServingCached(true);
+        setLoading(false);
+      }
+    }
 
     try {
       const res = await questionsApi.getDaily(country);
       setQuestion(res.data);
       setTrendingBadge(res.data?.trending_badge ?? null);
       setIsHot(res.data?.is_hot ?? false);
+      setServingCached(false);
+      lastFetchAtRef.current = Date.now();
+
+      await saveDailyQuestionCache(country, {
+        question: res.data,
+        trendingBadge: res.data?.trending_badge ?? null,
+        isHot: res.data?.is_hot ?? false,
+      });
 
       if (res.data?.user_country && res.data.user_country !== country) {
         setUserCountry(res.data.user_country);
@@ -204,22 +262,42 @@ export default function HomeScreen({ navigation }: any) {
         setHotQuestions([]);
         setPersonalizedQuestions([]);
         setPatterns([]);
+        setServingCached(false);
+        lastFetchAtRef.current = Date.now();
+        await saveDailyQuestionCache(country, {
+          question: res.data,
+          trendingBadge: null,
+          isHot: false,
+        });
       } catch (e2) {
         console.log("Error fetching random question:", e2);
-        setQuestion(null);
-        setApiOffline(true);
+        const cached = await loadDailyQuestionCache(country);
+        if (cached?.question) {
+          setQuestion(cached.question as Question);
+          setTrendingBadge(cached.trendingBadge ?? null);
+          setIsHot(Boolean(cached.isHot));
+          setServingCached(true);
+          setApiOffline(false);
+        } else {
+          setQuestion(null);
+          setApiOffline(true);
+          setServingCached(false);
+        }
       }
     } finally {
       setLoading(false);
     }
   };
 
-  // Re-fetch every time the screen gains focus (e.g. after changing country in Profile)
+  // Re-fetch on focus, but skip if we fetched recently (avoids thrash).
   useEffect(() => {
     fetchDaily();
 
     const unsubscribe = navigation.addListener("focus", () => {
-      fetchDaily();
+      const stale = Date.now() - lastFetchAtRef.current > 45_000;
+      if (stale) {
+        fetchDaily({ soft: true });
+      }
     });
 
     return unsubscribe;
@@ -237,63 +315,77 @@ export default function HomeScreen({ navigation }: any) {
 
   return (
     <LinearGradient
-      colors={["#0A0A0A", "#1A1A2E", "#16213E"]}
-      style={styles.container}
+      colors={Colors.background.gradient}
+      style={[GlobalStyles.container, { paddingTop: 50 }]}
     >
       <StatusBar style="light" />
 
-      {/* Country Badge at top */}
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.countryBadge}
-          onPress={() => navigation.navigate("Profile")}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.countryFlag}>{countryInfo.flag}</Text>
-          <Text style={styles.countryName}>{countryInfo.name}</Text>
-          <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.5)" />
-        </TouchableOpacity>
-      </View>
+      {/* Premium Animated Ambient Glow Orbs */}
+      <Animated.View
+        style={[
+          styles.ambientOrb1,
+          { transform: [{ scale: glowScale1 }] },
+        ]}
+        pointerEvents="none"
+      />
+      <Animated.View
+        style={[
+          styles.ambientOrb2,
+          { transform: [{ scale: glowScale2 }] },
+        ]}
+        pointerEvents="none"
+      />
 
-      {/* 🔥 Live Drop Banner */}
-      <DropBanner country={userCountry} />
+      {!COMPACT_HOME ? (
+        <View style={styles.topBar}>
+          <TouchableOpacity
+            style={styles.countryBadge}
+            onPress={() => navigation.navigate("Profile")}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.countryFlag}>{countryInfo.flag}</Text>
+            <Text style={styles.countryName}>{countryInfo.name}</Text>
+            <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.5)" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
-      {/* 🔥 Fusion Loop: Streak + Loop Progress */}
-      <StreakBar />
+      {!COMPACT_HOME ? <DropBanner country={userCountry} /> : null}
+      {!COMPACT_HOME ? <StreakBar /> : null}
+      {!COMPACT_HOME ? <PushOptInBanner compact /> : null}
+      {servingCached ? (
+        <View style={styles.cachedBanner}>
+          <Text style={styles.cachedBannerText}>Offline · showing saved question</Text>
+          <TouchableOpacity onPress={() => fetchDaily()} hitSlop={8}>
+            <Text style={styles.cachedBannerAction}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={styles.content}>
-        {loading ? (
-          <View style={styles.loadingWrap}>
-            <ActivityIndicator size="large" color="#FF3366" />
-          </View>
+        {loading && !question ? (
+          <StatePanel variant="loading" message="Loading today's question…" />
         ) : apiOffline ? (
-          <View style={styles.loadingWrap}>
-            <Text style={styles.offlineTitle}>📡 Can't reach the API</Text>
-            <Text style={styles.offlineBody}>
-              The app is trying:{"\n"}
-              <Text style={styles.offlineMono}>{API_BASE_URL}</Text>
-              {"\n\n"}
-              Start the backend:
-              {"\n"}
-              <Text style={styles.offlineMono}>
-                cd 5second-api{"\n"}npm run dev
-              </Text>
-            </Text>
-            <TouchableOpacity style={styles.retryBtn} onPress={fetchDaily}>
-              <Text style={styles.retryText}>🔁 Retry</Text>
-            </TouchableOpacity>
-          </View>
+          <StatePanel
+            variant="error"
+            title="Can't reach the server"
+            message={
+              __DEV__
+                ? `Trying ${API_BASE_URL}. Start the API, then retry.`
+                : "Check your connection and try again."
+            }
+            primaryLabel="Try again"
+            onPrimaryPress={fetchDaily}
+          />
         ) : question ? (
           <>
-            {/* 🔥 HOT Badge */}
-            {isHot && (
+            {!COMPACT_HOME && isHot && (
               <Animated.View style={[styles.hotBadge, { opacity: hotGlow }]}>
                 <Text style={styles.hotBadgeText}>🔥🔥 BLOWING UP RIGHT NOW</Text>
               </Animated.View>
             )}
 
-            {/* Trending Badge */}
-            {trendingBadge && !isHot && (
+            {!COMPACT_HOME && trendingBadge && !isHot && (
               <Animated.View
                 style={[
                   styles.trendingBadge,
@@ -321,7 +413,7 @@ export default function HomeScreen({ navigation }: any) {
               <Text style={styles.questionText}>"{question.text}"</Text>
             </View>
 
-            {/* 🧠 FOMO Social proof section */}
+            {!COMPACT_HOME ? (
             <Animated.View style={[styles.fomoSection, { opacity: fomoFade }]}>
               <Text style={styles.fomoMainLabel}>{fomoLabel}</Text>
 
@@ -341,6 +433,11 @@ export default function HomeScreen({ navigation }: any) {
                 👥 {totalAnswers} people answered today
               </Text>
             </Animated.View>
+            ) : totalAnswers > 0 ? (
+              <Text style={styles.compactSocialProof}>
+                👥 {totalAnswers} answered today
+              </Text>
+            ) : null}
 
             <TouchableOpacity
               style={styles.answerButton}
@@ -348,18 +445,19 @@ export default function HomeScreen({ navigation }: any) {
               onPress={() => goRecord({ question })}
             >
               <LinearGradient
-                colors={isHot ? ["#FF4500", "#FF6B00"] : ["#FF3366", "#FF6B6B"]}
+                colors={isHot ? Colors.accent.dangerGradient : Colors.accent.primaryGradient}
                 style={styles.answerButtonGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
               >
                 <Ionicons name="flash" size={22} color="#FFF" />
                 <Text style={styles.answerButtonText}>
-                  {isHot ? "🔥 Answer NOW" : "⚡ Answer in 5 seconds"}
+                  {COMPACT_HOME ? "⚡ Answer Now" : isHot ? "🔥 Answer NOW" : "⚡ Answer in 5 seconds"}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
 
+            {!COMPACT_HOME ? (
             <View style={styles.softEntryRow}>
               <TouchableOpacity
                 style={styles.softEntryPill}
@@ -374,15 +472,18 @@ export default function HomeScreen({ navigation }: any) {
                 <Text style={styles.softEntryPillText}>🎙️ Audio</Text>
               </TouchableOpacity>
             </View>
+            ) : null}
 
             <TouchableOpacity
               style={styles.scrollCta}
               onPress={goFeed}
             >
-              <Text style={styles.scrollCtaText}>⬇ Scroll to watch answers</Text>
+              <Text style={styles.scrollCtaText}>
+                {COMPACT_HOME ? "▶ Watch answers in feed" : "⬇ Scroll to watch answers"}
+              </Text>
             </TouchableOpacity>
 
-            {(hotQuestions.length > 0 || personalizedQuestions.length > 0 || patterns.length > 0) && (
+            {!COMPACT_HOME && (hotQuestions.length > 0 || personalizedQuestions.length > 0 || patterns.length > 0) && (
               <View style={styles.discoverySection}>
                 {personalizedQuestions.length > 0 && (
                   <View style={styles.discoveryBlock}>
@@ -439,13 +540,19 @@ export default function HomeScreen({ navigation }: any) {
             )}
           </>
         ) : (
-          <View style={styles.loadingWrap}>
-            <Text style={styles.errorText}>No questions available</Text>
-          </View>
+          <StatePanel
+            variant="empty"
+            title="No questions available"
+            message="Check back soon — a new daily question drops every day."
+            primaryLabel="Open feed"
+            onPrimaryPress={goFeed}
+            secondaryLabel="Retry"
+            onSecondaryPress={fetchDaily}
+          />
         )}
       </View>
 
-      {/* 🔥 Fusion Loop: Floating Next-Action Prompt */}
+      {!COMPACT_HOME ? (
       <FloatingPrompt
         onPress={(type) => {
           if (type === 'answer') navigation.navigate('Record');
@@ -454,6 +561,7 @@ export default function HomeScreen({ navigation }: any) {
           else if (type === 'drop') { /* DropBanner handles this */ }
         }}
       />
+      ) : null}
     </LinearGradient>
   );
 }
@@ -462,7 +570,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 50,
+    overflow: "hidden",
   },
+  ambientOrb1: GlobalStyles.ambientOrbTop,
+  ambientOrb2: GlobalStyles.ambientOrbBottom,
   topBar: {
     flexDirection: "row",
     justifyContent: "center",
@@ -491,6 +602,29 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 22,
+  },
+  cachedBanner: {
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 8,
+    backgroundColor: "rgba(10,10,14,0.82)",
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  cachedBannerText: {
+    color: "rgba(229,240,248,0.72)",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  cachedBannerAction: {
+    color: "#FF6B8A",
+    fontSize: 12,
+    fontWeight: "900",
   },
   loadingWrap: {
     flex: 1,
@@ -552,26 +686,37 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   questionCountryTagText: {
-    color: "rgba(255,255,255,0.5)",
+    color: Colors.text.tertiary,
     fontSize: 11,
     fontWeight: "700",
   },
   questionCard: {
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 18,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    ...GlobalStyles.glassCard,
+    padding: 24,
+    borderWidth: 1.5,
+    borderColor: "rgba(0, 229, 255, 0.3)", // neon cyan border
+    shadowColor: "#00E5FF",
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
   },
   questionCardHot: {
-    borderColor: "rgba(255, 69, 0, 0.4)",
-    backgroundColor: "rgba(255, 69, 0, 0.05)",
+    borderColor: "#FF3366", // neon hot pink/red
+    backgroundColor: "rgba(255, 51, 102, 0.05)",
+    shadowColor: "#FF3366",
+    shadowOpacity: 0.35,
+    shadowRadius: 25,
+    shadowOffset: { width: 0, height: 12 },
   },
   questionText: {
     color: "#FFF",
     fontSize: 28,
-    fontWeight: "800",
-    lineHeight: 36,
+    fontWeight: "900",
+    lineHeight: 38,
+    textAlign: "center",
+    textShadowColor: "rgba(255,255,255,0.15)",
+    textShadowRadius: 10,
+    letterSpacing: -0.5,
   },
 
   // ── FOMO section ─────────────────────────────
@@ -606,6 +751,13 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.5)",
     fontSize: 12,
     fontWeight: "600",
+  },
+  compactSocialProof: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 13,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
   },
 
   errorText: {
@@ -647,21 +799,23 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   answerButton: {
-    borderRadius: 28,
+    borderRadius: 20,
     overflow: "hidden",
     marginBottom: 14,
+    ...Shadows.glowPrimary,
   },
   answerButtonGradient: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    paddingVertical: 18,
+    paddingVertical: 16,
   },
   answerButtonText: {
     color: "#FFF",
     fontSize: 16,
     fontWeight: "900",
+    letterSpacing: 0.5,
   },
   softEntryRow: {
     flexDirection: "row",
@@ -670,15 +824,19 @@ const styles = StyleSheet.create({
   },
   softEntryPill: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.25)",
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(255,255,255,0.09)",
     paddingVertical: 12,
     alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
   },
   softEntryPillText: {
-    color: "rgba(255,255,255,0.8)",
+    color: "rgba(255,255,255,0.88)",
     fontSize: 13,
     fontWeight: "800",
   },
@@ -688,9 +846,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   scrollCtaText: {
-    color: "rgba(255,255,255,0.65)",
+    color: "#FF3366",
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    textShadowColor: "rgba(255, 51, 102, 0.2)",
+    textShadowRadius: 6,
   },
   discoverySection: {
     marginTop: 6,
@@ -706,11 +868,15 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   discoveryCard: {
-    backgroundColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
-    borderRadius: 18,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   discoveryCardText: {
     color: "#F6F8FF",
@@ -730,16 +896,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   patternChip: {
-    backgroundColor: "rgba(0,210,255,0.12)",
-    borderColor: "rgba(0,210,255,0.2)",
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
+    backgroundColor: "rgba(124, 77, 255, 0.12)", // neon violet overlay
+    borderColor: "rgba(124, 77, 255, 0.25)",
+    borderWidth: 1.5,
+    borderRadius: 20,
+    paddingHorizontal: 14,
     paddingVertical: 8,
   },
   patternChipText: {
-    color: "#BCEFFF",
+    color: "#D1C4E9",
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
   },
 });

@@ -9,8 +9,10 @@ export type UploadDraft = {
   mediaUri: string;
   answerType: Extract<AnswerType, "video" | "audio">;
   responseTime: number;
-  screen: "record" | "audio_answer";
+  screen: "record" | "audio_answer" | "remix";
   failedAt?: string | null;
+  /** Remix chain parent — required when screen is "remix". */
+  parentAnswerId?: number | null;
 };
 
 async function readDrafts(): Promise<UploadDraft[]> {

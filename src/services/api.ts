@@ -545,6 +545,21 @@ export const answersApi = {
     country: _userCountry,
   }),
 
+  uploadRemix: async (
+    parentAnswerId: number,
+    mediaUri: string,
+    response_time?: number,
+    options?: { answer_type?: "video" | "audio" }
+  ) => {
+    const answerType = options?.answer_type || "video";
+    const directUrl = await uploadMediaDirect(mediaUri, answerType);
+    return answersApi.createRemix(parentAnswerId, {
+      video_url: directUrl || mediaUri,
+      answer_type: answerType,
+      response_time,
+    });
+  },
+
   // Get full remix chain for an answer
   getChain: (answerId: number) =>
     api.get(`/answers/${answerId}/chain`),
@@ -630,7 +645,7 @@ export const duelsApi = {
   createAuto: (payload: {
     questionId: number;
     answerId?: number;
-    videoA: string;
+    videoA?: string;
   }) =>
     api.post("/duels/auto", {
       question_id: payload.questionId,
@@ -653,6 +668,10 @@ export const duelsApi = {
     api.post(`/duels/${duelId}/vote`, {
       vote,
     }),
+};
+
+export const trendingApi = {
+  getDiscoveryFeed: () => api.get("/trending/discovery"),
 };
 
 export const paywallApi = {

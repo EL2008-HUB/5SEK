@@ -6,5 +6,7 @@ export const CONTRACT_NAME: string = contract.contract_name;
 
 export type FeatureFlagKey = keyof typeof contract.feature_flags;
 export type FeatureAssignments = Partial<Record<FeatureFlagKey, string>>;
+export type AnswerType = "video" | "audio" | "text" | "reaction";
+export type ClientEventType = string;
 
 export default contract;

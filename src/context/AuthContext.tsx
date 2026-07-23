@@ -9,6 +9,7 @@ const STORAGE_KEYS = {
   token: "@5sek_auth_token",
   refreshToken: "@5sek_refresh_token",
   user: "@5sek_auth_user",
+  firstSessionComplete: "@5sek_first_session_complete",
 };
 
 type AuthUser = {
@@ -28,6 +29,8 @@ type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   bootstrapError: string | null;
+  isGuest: boolean;
+  needsFirstSession: boolean;
   retryBootstrap: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
   login: (email: string, password: string) => Promise<AuthUser>;
@@ -39,6 +42,7 @@ type AuthContextValue = {
   }) => Promise<AuthUser>;
   logout: () => Promise<void>;
   updateProfile: (data: { age_group?: string; interests?: string[]; country?: string }) => Promise<AuthUser>;
+  completeFirstSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -83,6 +87,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [needsFirstSession, setNeedsFirstSession] = useState(false);
+  const isGuest = user?.role === "guest";
+
+  const firstSessionKey = (nextUser: AuthUser) =>
+    `${STORAGE_KEYS.firstSessionComplete}:${nextUser.id}`;
+
+  const syncFirstSessionState = async (nextUser: AuthUser) => {
+    const completed = await storage.getItem(firstSessionKey(nextUser));
+    setNeedsFirstSession(completed !== "1");
+  };
 
   const syncAssignments = async () => {
     try {
@@ -96,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const response = await authApi.me();
     const nextUser = normalizeUser(response.data);
     setUser(nextUser);
+    await syncFirstSessionState(nextUser);
     await countryApi.setCountry(nextUser.country || "GLOBAL");
     await storage.setItem(STORAGE_KEYS.user, JSON.stringify(nextUser));
     if (nextUser.id) {
@@ -109,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await persistSession(payload.token, payload.refresh_token, nextUser);
     await countryApi.setCountry(nextUser.country || "GLOBAL");
     setUser(nextUser);
+    await syncFirstSessionState(nextUser);
     await syncAssignments();
     return nextUser;
   };
@@ -123,6 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const storedRefreshToken = await storage.getItem(STORAGE_KEYS.refreshToken);
       if (!storedToken) {
         setUser(null);
+        setNeedsFirstSession(false);
         experimentsApi.resetAssignments();
         return;
       }
@@ -143,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             );
             await countryApi.setCountry(nextUser.country || country);
             setUser(nextUser);
+            await syncFirstSessionState(nextUser);
             await syncAssignments();
             return;
           } catch (_) {}
@@ -150,6 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         await clearPersistedSession();
         setUser(null);
+        setNeedsFirstSession(false);
       }
     } finally {
       setLoading(false);
@@ -184,6 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (_) {}
     await clearPersistedSession();
     setUser(null);
+    setNeedsFirstSession(false);
   };
 
   useEffect(() => {
@@ -231,19 +251,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return nextUser;
   };
 
+  const completeFirstSession = async () => {
+    if (user) {
+      await storage.setItem(firstSessionKey(user), "1");
+    }
+    setNeedsFirstSession(false);
+  };
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       loading,
       bootstrapError,
+      isGuest,
+      needsFirstSession,
       retryBootstrap: bootstrapAuth,
       refreshUser,
       login,
       register,
       logout,
       updateProfile,
+      completeFirstSession,
     }),
-    [bootstrapError, loading, user]
+    [bootstrapError, isGuest, loading, needsFirstSession, user]
   );
 
   if (loading) {

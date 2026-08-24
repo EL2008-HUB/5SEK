@@ -47,13 +47,13 @@ async function recalculateViralScores(db) {
   // Fetch all active questions with their stats
   const rows = await db('questions as q')
     .join('question_stats as qs', 'qs.question_id', 'q.id')
-    .where('q.is_active', true)
+    .whereNull('q.deleted_at')
     .select(
       'q.id as question_id',
       'q.created_at as question_created_at',
       db.raw('COALESCE(qs.shares, 0) as shares'),
       db.raw('COALESCE(qs.likes, 0) as likes'),
-      db.raw('COALESCE(qs.completion_count, 0) as completions'),
+      db.raw('COALESCE((select sum(a.completion_count) from answers a where a.question_id = q.id), 0) as completions'),
       db.raw('COALESCE(qs.views, 0) as views')
     );
 

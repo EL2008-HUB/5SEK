@@ -1,6 +1,6 @@
 const router = require("express").Router();
 const questionController = require("../controllers/questionController");
-const { authMiddleware, requireAdmin } = require("../controllers/authController");
+const { authMiddleware, optionalAuthMiddleware, requireAdmin } = require("../controllers/authController");
 const {
   validateEmptyBody,
   validateCrossCountryCheck,
@@ -16,6 +16,15 @@ const adminRateLimit = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   keyStrategy: "user",
   message: "admin_rate_limited",
+});
+
+// Rate limiter for like/share — 60 actions per 15 min per user/IP
+const engagementRateLimit = createRateLimiter({
+  scope: "questions:engagement",
+  limit: 60,
+  windowMs: 15 * 60 * 1000,
+  keyStrategy: "user_or_ip",
+  message: "engagement_rate_limited",
 });
 
 // GET /api/questions/daily — today's viral question + social proof (country-aware)
@@ -59,11 +68,11 @@ router.post("/set-daily", authMiddleware, adminRateLimit, requireAdmin, validate
 // POST /api/questions/recalculate — admin: refresh all viral scores
 router.post("/recalculate", authMiddleware, adminRateLimit, requireAdmin, validateRecalculate, questionController.recalculateScores);
 
-// POST /api/questions/:id/like (country-aware)
-router.post("/:id/like", questionController.likeQuestion);
+// POST /api/questions/:id/like (country-aware) — optional auth + rate limit (anti-bot)
+router.post("/:id/like", optionalAuthMiddleware, engagementRateLimit, questionController.likeQuestion);
 
-// POST /api/questions/:id/share (country-aware)
-router.post("/:id/share", questionController.shareQuestion);
+// POST /api/questions/:id/share (country-aware) — optional auth + rate limit (anti-bot)
+router.post("/:id/share", optionalAuthMiddleware, engagementRateLimit, questionController.shareQuestion);
 
 // POST /api/questions/:id/cross-country — check cross-country viral potential
 router.post("/:id/cross-country", authMiddleware, adminRateLimit, requireAdmin, validateCrossCountryCheck, questionController.checkCrossCountry);

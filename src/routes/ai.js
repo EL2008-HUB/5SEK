@@ -56,7 +56,7 @@ router.get("/question", async (req, res) => {
     if (!question) {
       return res.status(503).json({
         error: "AI not configured",
-        hint: "Set OPENROUTER_API_KEY in your .env file",
+        hint: "Set GROQ_API_KEY in your .env file",
       });
     }
 

@@ -87,7 +87,7 @@ async function cleanupOrphanedSignedUploads(db, {
 }
 
 async function cleanupStaleRateLimits(db, {
-  olderThanDays = Number(process.env.RATE_LIMIT_RETENTION_DAYS || 7),
+  olderThanDays = Number(process.env.RATE_LIMIT_RETENTION_DAYS || 1),
 } = {}) {
   const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
 

@@ -16,6 +16,7 @@ const {
   restoreQuestion: restoreQuestionRecord,
   softDeleteQuestion,
 } = require("../services/safetyService");
+const { scoreQuestionQuality, withQuestionQuality } = require("../services/questionQuality");
 
 // ─────────────────────────────────────────────
 // Helper: resolve country from request
@@ -99,9 +100,10 @@ exports.getDaily = async (req, res) => {
         console.log(`🤖 [${country}] No viral candidate, trying AI...`);
 
         let aiText = null;
+        let topCategory = null;
         try {
           const catStats = await getCategoryStats(req.db, country);
-          const topCategory = catStats[0]?.category || null;
+          topCategory = catStats[0]?.category || null;
           aiText = await generateQuestion(req.db, topCategory, country);
         } catch (aiErr) {
           console.log(`⚠️ [${country}] AI failed (${aiErr.message}), using local fallback`);
@@ -110,14 +112,14 @@ exports.getDaily = async (req, res) => {
         if (aiText) {
           const [aiQuestion] = await req
             .db("questions")
-            .insert({
-              text: aiText,
-              is_daily: true,
-              active_date: today,
-              source: "ai",
-              category: topCategory || "general",
-              country: country,
-            })
+              .insert(withQuestionQuality({
+                text: aiText,
+                is_daily: true,
+                active_date: today,
+                source: "ai",
+                category: topCategory || "general",
+                country: country,
+              }))
             .returning("*");
           question = aiQuestion;
           console.log(
@@ -262,6 +264,7 @@ exports.getDaily = async (req, res) => {
 
     res.json({
       ...question,
+      question_quality: scoreQuestionQuality(question.text),
       user_country: country,
       is_hot: isHot,
       trending_badge: trendingBadge,
@@ -319,15 +322,18 @@ exports.create = async (req, res) => {
 
     const [question] = await req
       .db("questions")
-      .insert({
+      .insert(withQuestionQuality({
         text,
         category,
         country: country.toUpperCase(),
         source: "manual",
-      })
+      }))
       .returning("*");
 
-    res.status(201).json(question);
+    res.status(201).json({
+      ...question,
+      question_quality: scoreQuestionQuality(question.text),
+    });
   } catch (error) {
     console.error("Create question error:", error);
     res.status(500).json({ error: "Failed to create question" });

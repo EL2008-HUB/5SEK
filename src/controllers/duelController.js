@@ -114,7 +114,11 @@ function duelBaseQuery(db) {
       "ub.username as user_b_username",
       "questions.text as question_text",
       "aa.views as answer_a_views",
-      "ab.views as answer_b_views"
+      "ab.views as answer_b_views",
+      "aa.text_content as text_a",
+      "ab.text_content as text_b",
+      "aa.answer_type as answer_type_a",
+      "ab.answer_type as answer_type_b"
     );
 }
 
@@ -132,7 +136,7 @@ async function getUserVote(db, duelId, userId) {
   return voteRow?.vote || null;
 }
 
-async function resolveVideoAnswer(db, {
+async function resolveAnswer(db, {
   answerId = null,
   userId,
   questionId,
@@ -140,11 +144,9 @@ async function resolveVideoAnswer(db, {
 }) {
   const query = db("answers as a")
     .join("users as u", "a.user_id", "u.id")
-    .select("a.id", "a.user_id", "a.question_id", "a.video_url", "u.username")
+    .select("a.id", "a.user_id", "a.question_id", "a.video_url", "a.answer_type", "a.text_content", "u.username")
     .where("a.question_id", questionId)
     .where("a.user_id", userId)
-    .where("a.answer_type", "video")
-    .whereNotNull("a.video_url")
     .orderBy("a.created_at", "desc");
 
   applyActiveAnswerFilter(query, "a");
@@ -171,6 +173,8 @@ async function findSmartOpponent(db, {
       "a.user_id",
       "a.question_id",
       "a.video_url",
+      "a.answer_type",
+      "a.text_content",
       "u.username",
       db.raw(`
         (
@@ -185,8 +189,6 @@ async function findSmartOpponent(db, {
       `)
     )
     .where("a.question_id", questionId)
-    .where("a.answer_type", "video")
-    .whereNotNull("a.video_url")
     .whereNot("a.user_id", userId)
     .whereNotExists(function whereActiveDuel() {
       this.select(1)
@@ -299,13 +301,13 @@ exports.create = async (req, res) => {
     }
 
     const [answerA, answerB] = await Promise.all([
-      resolveVideoAnswer(req.db, {
+      resolveAnswer(req.db, {
         answerId: payload.answer_a_id,
         userId: user_a_id,
         questionId: question_id,
         videoUrl: payload.video_a_url,
       }),
-      resolveVideoAnswer(req.db, {
+      resolveAnswer(req.db, {
         answerId: payload.answer_b_id,
         userId: user_b_id,
         questionId: question_id,
@@ -371,7 +373,7 @@ exports.createAuto = async (req, res) => {
       return res.status(404).json({ error: "question_not_found" });
     }
 
-    const answerA = await resolveVideoAnswer(req.db, {
+    const answerA = await resolveAnswer(req.db, {
       answerId: payload.answer_id,
       userId: user_a_id,
       questionId: question_id,

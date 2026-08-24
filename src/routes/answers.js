@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const answerController = require("../controllers/answerController");
-const { authMiddleware } = require("../controllers/authController");
+const remixController = require("../controllers/remixController");
+const { authMiddleware, optionalAuthMiddleware } = require("../controllers/authController");
 const {
   ensureSelfOrAdmin,
   validateAnswerCreate,
@@ -10,6 +11,7 @@ const {
 const { createRateLimiter } = require("../middleware/rateLimit");
 const { uploadVideo } = require("../services/uploadService");
 const { incCounter } = require("../services/metricsService");
+const { getOrComputePreferences } = require("../services/personalizationService");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
@@ -34,6 +36,15 @@ const uploadRateLimit = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   keyStrategy: "user_or_ip",
   message: "upload_rate_limited",
+});
+
+// Rate limiter for like/share — 60 actions per 15 min per user/IP (anti-bot)
+const engagementRateLimit = createRateLimiter({
+  scope: "answers:engagement",
+  limit: 60,
+  windowMs: 15 * 60 * 1000,
+  keyStrategy: "user_or_ip",
+  message: "engagement_rate_limited",
 });
 
 // ── POST /api/answers ─────────────────────────────────────────────
@@ -102,7 +113,41 @@ router.post("/upload", authMiddleware, uploadRateLimit, upload.single("video"), 
 });
 
 // ── GET /api/answers ──────────────────────────────────────────────
-router.get("/", answerController.getFeed);
+// Use optional auth so personalization works for logged-in users
+router.get("/", optionalAuthMiddleware, answerController.getFeed);
+
+// ── GET /api/answers/preferences ──────────────────────────────────
+// Returns the user's learned taste profile
+router.get("/preferences", authMiddleware, async (req, res) => {
+  try {
+    const prefs = await getOrComputePreferences(req.db, req.userId);
+    if (!prefs) {
+      return res.json({
+        message: "Not enough data yet. Keep using the app!",
+        has_preferences: false,
+        preferences: null,
+      });
+    }
+
+    res.json({
+      has_preferences: true,
+      preferences: {
+        favorite_categories: prefs.favorite_categories || [],
+        favorite_tags: prefs.favorite_tags || [],
+        skip_categories: prefs.skip_categories || [],
+        preferred_answer_type: prefs.preferred_answer_type,
+        avg_watch_pct: prefs.avg_watch_pct,
+        total_completions: prefs.total_completions,
+        total_skips: prefs.total_skips,
+        total_replays: prefs.total_replays,
+        peak_hour: prefs.peak_hour,
+      },
+    });
+  } catch (error) {
+    console.error("Get preferences error:", error);
+    res.status(500).json({ error: "Failed to get preferences" });
+  }
+});
 
 // ── GET /api/answers/user/:userId ─────────────────────────────────
 router.get("/user/:userId", authMiddleware, ensureSelfOrAdmin("userId"), answerController.getByUser);
@@ -110,12 +155,28 @@ router.get("/user/:userId", authMiddleware, ensureSelfOrAdmin("userId"), answerC
 // ── GET /api/answers/daily-usage/:userId ──────────────────────────
 router.get("/daily-usage/:userId", authMiddleware, ensureSelfOrAdmin("userId"), answerController.getDailyUsage);
 
+// ── GET /api/answers/:id ──────────────────────────────────────────
+// FIX 5: Deep link — shared links open directly to this answer
+router.get("/:id", optionalAuthMiddleware, answerController.getById);
+
 // ── POST /api/answers/:id/like ────────────────────────────────────
-router.post("/:id/like", answerController.likeAnswer);
+// optional auth so anonymous users can still like, but rate-limited (anti-bot)
+router.post("/:id/like", optionalAuthMiddleware, engagementRateLimit, answerController.likeAnswer);
 
 // ── POST /api/answers/:id/share ───────────────────────────────────
-router.post("/:id/share", answerController.shareAnswer);
+// optional auth so anonymous users can still share, but rate-limited (anti-bot)
+router.post("/:id/share", optionalAuthMiddleware, engagementRateLimit, answerController.shareAnswer);
 
 router.post("/:id/analytics", authMiddleware, validateAnswerEngagement, answerController.trackEngagement);
+
+// ── REMIX CHAIN ENDPOINTS ─────────────────────────────────────────
+// POST /api/answers/:id/remix — create a remix of an answer
+router.post("/:id/remix", authMiddleware, remixController.createRemix);
+
+// GET /api/answers/:id/chain — get full remix chain
+router.get("/:id/chain", optionalAuthMiddleware, remixController.getChain);
+
+// GET /api/answers/:id/remixes — remix count + can-remix check
+router.get("/:id/remixes", optionalAuthMiddleware, remixController.getRemixInfo);
 
 module.exports = router;

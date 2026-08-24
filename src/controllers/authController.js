@@ -416,6 +416,8 @@ async function authenticateRequest(req, res, next, { optional }) {
     const user = await loadAuthenticatedUser(req, decoded.id);
     if (isUserUnavailable(user)) {
       if (optional) {
+        // Signal to client that their token is invalid so they can re-auth
+        res.setHeader("X-Auth-Status", "invalid");
         return next();
       }
       const unavailable = getUnavailableUserError(user);
@@ -430,6 +432,13 @@ async function authenticateRequest(req, res, next, { optional }) {
     return next();
   } catch (error) {
     if (optional) {
+      // Tell the client their token expired so they can silently refresh
+      if (error.name === "TokenExpiredError") {
+        res.setHeader("X-Auth-Status", "expired");
+      } else {
+        res.setHeader("X-Auth-Status", "invalid");
+      }
+      incCounter("auth_failures_total", { reason: "invalid_access_token" });
       return next();
     }
     incCounter("auth_failures_total", { reason: "invalid_access_token" });

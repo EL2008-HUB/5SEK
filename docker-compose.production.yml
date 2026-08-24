@@ -1,8 +1,121 @@
+# Full prod-like stack (API + workers + Postgres).
+# Usage:
+#   docker compose -f docker-compose.production.yml --env-file .env.docker.local up -d --build
+# Optional profiles:
+#   --profile proxy
+#   --profile observability
+
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: fivesek
+    ports:
+      - "5545:5432"
+    volumes:
+      - 5sek_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d fivesek"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${COMPOSE_ENV_FILE:-.env.docker.local}
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: postgres://user:password@db:5432/fivesek
+      DATABASE_URL_DIRECT: postgres://user:password@db:5432/fivesek
+      DB_SSL_MODE: disable
+      INLINE_BACKGROUND_WORKER: "false"
+      INLINE_INJECTION_WORKER: "false"
+      UNLIMITED_ANSWER_CREATION: "1"
+      ANSWER_POST_COOLDOWN_SECONDS: "0"
+      REQUIRE_HTTPS: "false"
+      ALLOW_DEV_SHOP_GRANT: "1"
+      ALLOW_NON_CLOUDINARY_MEDIA: "1"
+    ports:
+      - "3000:3000"
+    command: ["node", "server.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${COMPOSE_ENV_FILE:-.env.docker.local}
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: postgres://user:password@db:5432/fivesek
+      DATABASE_URL_DIRECT: postgres://user:password@db:5432/fivesek
+      DB_SSL_MODE: disable
+      INLINE_BACKGROUND_WORKER: "false"
+      INLINE_INJECTION_WORKER: "false"
+    command: ["node", "scripts/run-job-worker.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+
+  injector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${COMPOSE_ENV_FILE:-.env.docker.local}
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: postgres://user:password@db:5432/fivesek
+      DATABASE_URL_DIRECT: postgres://user:password@db:5432/fivesek
+      DB_SSL_MODE: disable
+      INLINE_BACKGROUND_WORKER: "false"
+      INLINE_INJECTION_WORKER: "false"
+    command: ["node", "scripts/run-injection-worker.js"]
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+
   proxy:
+    profiles: ["proxy"]
     image: nginx:1.27-alpine
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
@@ -12,67 +125,8 @@ services:
       - ./ops/nginx/tls:/etc/nginx/tls:ro
     restart: unless-stopped
 
-  api:
-    build:
-      context: ./5second-api
-    env_file:
-      - ./5second-api/.env.production.local
-    environment:
-      NODE_ENV: production
-      INLINE_BACKGROUND_WORKER: "false"
-      INLINE_INJECTION_WORKER: "false"
-    expose:
-      - "3000"
-    command: ["node", "server.js"]
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-
-  worker:
-    build:
-      context: ./5second-api
-    env_file:
-      - ./5second-api/.env.production.local
-    environment:
-      NODE_ENV: production
-      INLINE_BACKGROUND_WORKER: "false"
-      INLINE_INJECTION_WORKER: "false"
-    command: ["node", "scripts/run-job-worker.js"]
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
-
-  injector:
-    build:
-      context: ./5second-api
-    env_file:
-      - ./5second-api/.env.production.local
-    environment:
-      NODE_ENV: production
-      INLINE_BACKGROUND_WORKER: "false"
-      INLINE_INJECTION_WORKER: "false"
-    command: ["node", "scripts/run-injection-worker.js"]
-    restart: unless-stopped
-
   prometheus:
+    profiles: ["observability"]
     image: prom/prometheus:v2.54.1
     volumes:
       - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -80,6 +134,7 @@ services:
     restart: unless-stopped
 
   alertmanager:
+    profiles: ["observability"]
     image: prom/alertmanager:v0.27.0
     volumes:
       - ./ops/prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
@@ -88,17 +143,13 @@ services:
     restart: unless-stopped
 
   vector:
+    profiles: ["observability"]
     image: timberio/vector:0.41.1-alpine
     environment:
       VECTOR_HTTP_INGEST_URL: ${VECTOR_HTTP_INGEST_URL:-http://logs.example.com/ingest}
     volumes:
       - ./ops/vector/vector.toml:/etc/vector/vector.toml:ro
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
-        reservations:
-          cpus: '0.1'
-          memory: 128M
+
+volumes:
+  5sek_pgdata:

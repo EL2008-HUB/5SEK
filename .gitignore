@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# unreadable git directory kept from the pre-restore laptop
+.git-damaged/
+
 # Expo
 .expo/
 dist/
@@ -25,6 +28,7 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+*.log
 
 # macOS
 .DS_Store

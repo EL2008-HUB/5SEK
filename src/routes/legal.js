@@ -16,6 +16,7 @@ const {
   isCloudinaryExportRef,
   processExportRequest,
 } = require('../services/exportService');
+const { queueBackgroundJob, getBackgroundJob, JOB_TYPES } = require('../services/backgroundJobService');
 
 function serializeExportRequest(request) {
   if (!request) {
@@ -479,6 +480,94 @@ router.post('/cancel-deletion', authMiddleware, async (req, res) => {
 
   } catch (error) {
     res.status(500).json({ error: 'failed_to_cancel' });
+  }
+});
+
+// GDPR Export via Background Job (Kërkesa 11.4)
+// POST /api/legal/export — kueue-on job-in GDPR_EXPORT
+router.post('/export', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+
+    // Kontrollo nëse ka tashmë një job aktiv për këtë përdorues
+    const existingJob = await req.db('background_jobs')
+      .where('job_type', JOB_TYPES.GDPR_EXPORT)
+      .whereIn('status', ['queued', 'running'])
+      .whereRaw("payload::jsonb->>'userId' = ?", [String(userId)])
+      .orderBy('created_at', 'desc')
+      .first();
+
+    if (existingJob) {
+      return res.status(202).json({
+        success: true,
+        jobId: existingJob.id,
+        status: existingJob.status,
+        message: 'Export job already in progress',
+      });
+    }
+
+    const job = await queueBackgroundJob(req.db, {
+      jobType: JOB_TYPES.GDPR_EXPORT,
+      payload: { userId },
+      maxAttempts: 3,
+    });
+
+    res.status(202).json({
+      success: true,
+      jobId: job.id,
+      status: job.status,
+      message: 'GDPR export job queued. Check status at GET /api/legal/export/:jobId',
+    });
+  } catch (error) {
+    console.error('GDPR export queue error:', error);
+    res.status(500).json({ error: 'failed_to_queue_export' });
+  }
+});
+
+// GET /api/legal/export/:jobId — kontrollo statusin e eksportit
+router.get('/export/:jobId', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const jobId = Number(req.params.jobId);
+
+    if (!jobId) {
+      return res.status(400).json({ error: 'invalid_job_id' });
+    }
+
+    const job = await getBackgroundJob(req.db, jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'export_job_not_found' });
+    }
+
+    // Verifiko se job-i i përket këtij përdoruesi
+    const jobUserId = Number(job.payload?.userId);
+    if (jobUserId !== Number(userId)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    if (job.status === 'completed' && job.result?.data) {
+      return res.json({
+        jobId: job.id,
+        status: 'completed',
+        exportedAt: job.result.exported_at,
+        summary: job.result.summary,
+        data: job.result.data,
+      });
+    }
+
+    res.json({
+      jobId: job.id,
+      status: job.status,
+      createdAt: job.created_at,
+      completedAt: job.completed_at || null,
+      error: job.last_error || null,
+    });
+  } catch (error) {
+    console.error('GDPR export status error:', error);
+    res.status(500).json({ error: 'failed_to_get_export_status' });
   }
 });
 

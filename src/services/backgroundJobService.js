@@ -1,5 +1,6 @@
 const { generateQuestion, generateQuestions, getSupportedCountries } = require("./aiService");
 const { analyseAllPatterns } = require("./patternExtractor");
+const { rankQuestionTexts, withQuestionQuality } = require("./questionQuality");
 const { aggregateDailyAnalytics } = require("./analyticsAggregationService");
 const {
   cleanupHiddenMedia,
@@ -8,6 +9,11 @@ const {
 } = require("./cleanupService");
 const { createDatabaseBackoffController } = require("./dbResilience");
 const { handlePushDeliveryJob } = require("./pushNotificationService");
+const { processDueDrops, autoScheduleFixedDrops } = require("./dropService");
+const { checkAndTriggerReturns } = require("./returnEngineService");
+const { recalculateViralScores } = require("./viralScoreModelService");
+const { exportUserData } = require("./gdprExportService");
+const { processFusionNotifications, resetDailyFlags: resetFusionDailyFlags } = require("./fusionLoopService");
 
 const JOB_TYPES = {
   AI_GENERATE_DAILY_QUESTION: "ai_generate_daily_question",
@@ -17,6 +23,11 @@ const JOB_TYPES = {
   RATE_LIMIT_CLEANUP: "rate_limit_cleanup",
   ANALYTICS_AGGREGATION: "analytics_aggregation",
   PUSH_NOTIFICATION_DELIVERY: "push_notification_delivery",
+  DROP_PROCESSING: "drop_processing",
+  RETURN_ENGINE_CHECK: "return_engine_check",
+  VIRAL_SCORE_RECALCULATION: "viral_score_recalculation",
+  GDPR_EXPORT: "gdpr_export",
+  FUSION_LOOP_CHECK: "fusion_loop_check",
 };
 
 function safeParseJson(value) {
@@ -99,14 +110,14 @@ async function handleAIDailyQuestionJob(db, payload = {}) {
     .update({ is_daily: false, active_date: null });
 
   const [question] = await db("questions")
-    .insert({
+    .insert(withQuestionQuality({
       text,
       is_daily: true,
       active_date: today,
       country,
       category: payload.preferredCategory || "general",
       source: "ai",
-    })
+    }))
     .returning("*");
 
   return {
@@ -126,7 +137,7 @@ async function handleAIBulkQuestionsJob(db, payload = {}) {
 
   const inserted = await db("questions")
     .insert(
-      questions.map((text) => ({
+      rankQuestionTexts(questions).map(({ text }) => withQuestionQuality({
         text,
         country,
         source: "ai",
@@ -139,6 +150,39 @@ async function handleAIBulkQuestionsJob(db, payload = {}) {
     generated: inserted.length,
     question_ids: inserted.map((row) => row.id),
     country,
+  };
+}
+
+async function handleReturnEngineJob(db) {
+  return checkAndTriggerReturns(db);
+}
+
+async function handleViralScoreRecalculationJob(db) {
+  return recalculateViralScores(db);
+}
+
+/**
+ * Handler për job-in GDPR_EXPORT.
+ * Eksporton të gjitha të dhënat e përdoruesit dhe ruan rezultatin në job.
+ * SLA: duhet të përfundojë brenda 24 orësh.
+ *
+ * @param {import('knex').Knex} db
+ * @param {{ userId: number }} payload
+ */
+async function handleGdprExportJob(db, payload = {}) {
+  const userId = Number(payload.userId);
+  if (!userId) {
+    throw new Error("gdpr_export_missing_user_id");
+  }
+
+  const exportData = await exportUserData(db, userId);
+
+  return {
+    status: "completed",
+    user_id: userId,
+    exported_at: exportData.exported_at,
+    summary: exportData.summary,
+    data: exportData,
   };
 }
 
@@ -164,6 +208,22 @@ async function runJobHandler(db, job) {
       return aggregateDailyAnalytics(db, payload);
     case JOB_TYPES.PUSH_NOTIFICATION_DELIVERY:
       return handlePushDeliveryJob(db, job, payload);
+    case JOB_TYPES.DROP_PROCESSING: {
+      const activated = await processDueDrops(db);
+      const scheduled = await autoScheduleFixedDrops(db).catch(() => 0);
+      return { activated, scheduled, timestamp: new Date().toISOString() };
+    }
+    case JOB_TYPES.RETURN_ENGINE_CHECK:
+      return handleReturnEngineJob(db);
+    case JOB_TYPES.VIRAL_SCORE_RECALCULATION:
+      return handleViralScoreRecalculationJob(db);
+    case JOB_TYPES.GDPR_EXPORT:
+      return handleGdprExportJob(db, payload);
+    case JOB_TYPES.FUSION_LOOP_CHECK: {
+      const fusionResult = await processFusionNotifications(db);
+      await resetFusionDailyFlags(db);
+      return { ...fusionResult, daily_flags_reset: true, timestamp: new Date().toISOString() };
+    }
     default:
       throw new Error(`unknown_job_type:${job.job_type}`);
   }
@@ -255,6 +315,41 @@ async function ensureRecurringJobs(db) {
   await queueBackgroundJob(db, {
     jobType: JOB_TYPES.RATE_LIMIT_CLEANUP,
     dedupeKey: `rate-limit-cleanup:${day}`,
+  });
+
+  // Drop processing runs every schedule tick
+  const minuteKey = now.toISOString().slice(0, 16); // per-minute granularity
+  await queueBackgroundJob(db, {
+    jobType: JOB_TYPES.DROP_PROCESSING,
+    dedupeKey: `drop-processing:${minuteKey}`,
+    maxAttempts: 2,
+  });
+
+  // Return Engine runs every hour
+  await queueBackgroundJob(db, {
+    jobType: JOB_TYPES.RETURN_ENGINE_CHECK,
+    dedupeKey: `return-engine:${hourKey}`,
+    maxAttempts: 3,
+  });
+
+  // Viral Score Recalculation runs every 15 minutes
+  const now15 = new Date();
+  const day15 = now15.toISOString().slice(0, 10);
+  const bucket15 = String(
+    Math.floor(now15.getUTCHours() * 4 + Math.floor(now15.getUTCMinutes() / 15))
+  ).padStart(3, "0");
+  const fifteenMinBucket = `${day15}:${bucket15}`;
+  await queueBackgroundJob(db, {
+    jobType: JOB_TYPES.VIRAL_SCORE_RECALCULATION,
+    dedupeKey: `viral-score:${fifteenMinBucket}`,
+    maxAttempts: 3,
+  });
+
+  // Fusion Loop: streak notifications + daily reset (runs every hour)
+  await queueBackgroundJob(db, {
+    jobType: JOB_TYPES.FUSION_LOOP_CHECK,
+    dedupeKey: `fusion-loop:${hourKey}`,
+    maxAttempts: 3,
   });
 }
 

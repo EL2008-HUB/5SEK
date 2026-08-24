@@ -1,49 +1,58 @@
 /**
- * AI Service — OpenRouter Integration
+ * AI Service — Groq Integration
  *
- * Uses OpenRouter API to generate viral questions with country-specific
+ * Uses Groq API to generate viral questions with country-specific
  * cultural profiles and pattern-aware prompts.
  */
 const { getTopPatterns, formatPatternsForPrompt } = require("./patternExtractor");
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions";
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // Fallback chain — if one model is rate-limited, try the next
 const AI_MODELS = [
-  "google/gemma-4-31b-it:free",
-  "qwen/qwen3-next-80b-a3b-instruct:free",
-  "openai/gpt-oss-120b:free",
-  "nvidia/nemotron-3-super-120b-a12b:free",
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+  "gemma2-9b-it",
+  "mixtral-8x7b-32768",
 ];
 let aiAuthFailed = false;
 let aiAuthFailureMessage = null;
+let aiAuthFailedAt = null;
+const AI_AUTH_RETRY_AFTER_MS = 5 * 60 * 1000; // retry after 5 minutes
 
-if (!OPENROUTER_API_KEY) {
-  console.warn("⚠️  OPENROUTER_API_KEY not set — AI question generation will be disabled");
+if (!GROQ_API_KEY) {
+  console.warn("⚠️  GROQ_API_KEY not set — AI question generation will be disabled");
 } else {
-  console.log("✅ OpenRouter AI configured (models: " + AI_MODELS.length + " fallbacks)");
+  console.log("✅ Groq AI configured (models: " + AI_MODELS.length + " fallbacks)");
 }
 
 // ─────────────────────────────────────────────
-// OpenRouter API call helper with model fallback
+// Groq API call helper with model fallback
 // ─────────────────────────────────────────────
 
-async function callOpenRouter(prompt) {
-  if (!OPENROUTER_API_KEY) return null;
+async function callGroq(prompt) {
+  if (!GROQ_API_KEY) return null;
+
+  // Auto-reset auth failure after retry window (avoids permanent disable without restart)
+  if (aiAuthFailed && aiAuthFailedAt && (Date.now() - aiAuthFailedAt) > AI_AUTH_RETRY_AFTER_MS) {
+    console.log("   🔄 AI auth failure window expired — retrying Groq...");
+    aiAuthFailed = false;
+    aiAuthFailureMessage = null;
+    aiAuthFailedAt = null;
+  }
+
   if (aiAuthFailed) {
-    throw new Error(aiAuthFailureMessage || "OpenRouter authentication failed");
+    throw new Error(aiAuthFailureMessage || "Groq authentication failed");
   }
 
   for (const model of AI_MODELS) {
     try {
-      const response = await fetch(OPENROUTER_BASE_URL, {
+      const response = await fetch(GROQ_BASE_URL, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Authorization": `Bearer ${GROQ_API_KEY}`,
           "Content-Type": "application/json",
-          "HTTP-Referer": "https://5sek.app",
-          "X-Title": "5SEK",
         },
         body: JSON.stringify({
           model,
@@ -67,8 +76,9 @@ async function callOpenRouter(prompt) {
       if (response.status === 401 || response.status === 403) {
         await response.text();
         aiAuthFailed = true;
-        aiAuthFailureMessage = `OpenRouter authentication failed (${response.status})`;
-        console.log(`   auth error on ${model} (${response.status}) - disabling AI calls until restart`);
+        aiAuthFailedAt = Date.now();
+        aiAuthFailureMessage = `Groq authentication failed (${response.status})`;
+        console.log(`   auth error on ${model} (${response.status}) - disabling AI calls for ${AI_AUTH_RETRY_AFTER_MS / 60000} min`);
         throw new Error(aiAuthFailureMessage);
       }
       if (!response.ok) {
@@ -101,7 +111,7 @@ async function moderatePublicContent({
   responseTime = null,
 } = {}) {
   const normalizedContent = String(content || "").trim();
-  if (!normalizedContent || !OPENROUTER_API_KEY) {
+  if (!normalizedContent || !GROQ_API_KEY) {
     return null;
   }
 
@@ -121,7 +131,7 @@ Rules:
 Answer ONLY:
 ALLOW or REJECT`;
 
-  const result = await callOpenRouter(prompt);
+  const result = await callGroq(prompt);
   if (!result) {
     return null;
   }
@@ -286,6 +296,8 @@ Generate ONE similar question that:
 - Is instantly answerable in 5 seconds (no thinking needed)
 - Matches the cultural style: ${culture.style}
 - Uses the top-performing patterns listed above
+- Scores high on: emotional_trigger + relatability + curiosity_gap
+- Avoids bland preference prompts like "Do you like music?"
 - Is provocative, personal, or creates debate
 - Feels natural and relatable for people in ${culture.name}
 - Sounds like something friends would ask each other
@@ -296,10 +308,10 @@ Generate ONE similar question that:
  * Generate a single short viral question, country-aware.
  */
 async function generateQuestion(db = null, preferredCategory = null, country = "GLOBAL") {
-  if (!OPENROUTER_API_KEY) return null;
+  if (!GROQ_API_KEY) return null;
 
   const prompt = await buildSmartPrompt(db, preferredCategory, country);
-  const result = await callOpenRouter(prompt);
+  const result = await callGroq(prompt);
   if (!result) return null;
 
   return result.trim().replace(/^["']|["']$/g, "");
@@ -309,7 +321,7 @@ async function generateQuestion(db = null, preferredCategory = null, country = "
  * Generate multiple unique questions for a specific country.
  */
 async function generateQuestions(count = 5, db = null, preferredCategory = null, country = "GLOBAL") {
-  if (!OPENROUTER_API_KEY) return [];
+  if (!GROQ_API_KEY) return [];
 
   const safeCount = Math.min(Math.max(1, count), 10);
   const culture = COUNTRY_CULTURE[country] || COUNTRY_CULTURE.GLOBAL;
@@ -345,6 +357,8 @@ Rules:
 - All in ${culture.language}
 - Must be instantly answerable (no research needed)
 - Match the cultural style: ${culture.style}
+- Internally score each idea by emotional_trigger + relatability + curiosity_gap, then keep only the strongest
+- Avoid bland preference prompts like "Do you like music?"
 - Slightly provocative, funny, or thought-provoking
 - Each question on its own line
 - No numbering, no bullets, no quotes, no explanations
@@ -353,7 +367,7 @@ Rules:
 These questions performed well in ${culture.name} — match their style:
 ${examples.join("\n")}`;
 
-  const result = await callOpenRouter(prompt);
+  const result = await callGroq(prompt);
   if (!result) return [];
 
   return result
@@ -376,7 +390,18 @@ function getSupportedCountries() {
 }
 
 function isAIEnabled() {
-  return Boolean(OPENROUTER_API_KEY) && !aiAuthFailed;
+  return Boolean(GROQ_API_KEY) && !aiAuthFailed;
+}
+
+/**
+ * Manually reset the AI auth failure state (e.g. after updating GROQ_API_KEY).
+ * Called by admin endpoint POST /api/admin/ai/reset-auth
+ */
+function resetAIAuth() {
+  aiAuthFailed = false;
+  aiAuthFailureMessage = null;
+  aiAuthFailedAt = null;
+  console.log("✅ AI auth state reset manually");
 }
 
 module.exports = {
@@ -385,5 +410,6 @@ module.exports = {
   generateQuestions,
   getSupportedCountries,
   isAIEnabled,
+  resetAIAuth,
   COUNTRY_CULTURE,
 };

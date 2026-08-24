@@ -13,6 +13,7 @@
  * Country isolation: each country has its own question_stats row,
  * so a question can be #1 in Albania but mediocre globally.
  */
+const { getQuestionQualityPrior } = require("./questionQuality");
 
 // ─────────────────────────────────────────────
 // Score calculation
@@ -24,8 +25,9 @@
  * @param {number} recentAnswers - answers in last 2 hours (for fast-feedback)
  * @returns {number}
  */
-function calculateScore(stat, recentAnswers = 0) {
+function calculateScore(stat, recentAnswers = 0, contentPrior = 0) {
   const base =
+    (contentPrior || 0) +
     (stat.answers_count || 0) * 3 +
     (stat.shares || stat.total_shares || 0) * 5 +
     (stat.likes || stat.total_likes || 0) * 2 +
@@ -123,10 +125,15 @@ async function recalculateAllScores(db) {
 
   // ── Per-country stats ─────────────────────────
   const stats = await db("question_stats").select("*");
+  const questionRows = await db("questions").select("id", "text");
+  const qualityPriorByQuestionId = new Map(
+    questionRows.map((row) => [Number(row.id), getQuestionQualityPrior(row.text)])
+  );
 
   for (const stat of stats) {
     const recentAnswers = recentAnswersByQuestionId.get(Number(stat.question_id)) || 0;
-    const score = calculateScore(stat, recentAnswers);
+    const contentPrior = qualityPriorByQuestionId.get(Number(stat.question_id)) || 0;
+    const score = calculateScore(stat, recentAnswers, contentPrior);
 
     await db("question_stats")
       .where({ id: stat.id })
@@ -136,6 +143,7 @@ async function recalculateAllScores(db) {
   // ── Legacy: update questions.performance_score from GLOBAL stats ──
   const questions = await db("questions").select(
     "id",
+    "text",
     "answers_count",
     "total_shares",
     "total_likes",
@@ -144,7 +152,7 @@ async function recalculateAllScores(db) {
 
   for (const q of questions) {
     const recentAnswers = recentAnswersByQuestionId.get(Number(q.id)) || 0;
-    const score = calculateScore(q, recentAnswers);
+    const score = calculateScore(q, recentAnswers, getQuestionQualityPrior(q.text));
 
     await db("questions").where({ id: q.id }).update({ performance_score: score });
   }
@@ -188,7 +196,7 @@ async function pickBestQuestion(db, today, country = "GLOBAL") {
         thirtyDaysAgo
       );
     })
-    .orderBy("question_stats.score", "desc")
+    .orderByRaw("COALESCE(question_stats.score, questions.performance_score, 0) DESC")
     .select("questions.*", "question_stats.score as country_score")
     .first();
 

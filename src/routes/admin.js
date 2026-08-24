@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../controllers/authController');
 const { adminService } = require('../services/adminService');
+const { resetAIAuth } = require('../services/aiService');
 
 function parseJsonArray(value) {
   if (Array.isArray(value)) {
@@ -376,6 +377,25 @@ router.put('/country-rules/:countryCode', requireAdmin(), async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'failed_to_update_rule' });
+  }
+});
+
+// AI Management
+router.post('/ai/reset-auth', requireAdmin(), async (req, res) => {
+  try {
+    resetAIAuth();
+
+    await req.db('admin_activity_log').insert({
+      admin_id: req.userId,
+      action_type: 'ai_auth_reset',
+      description: 'Manually reset AI auth state via admin endpoint',
+      metadata: JSON.stringify({ reset_at: new Date().toISOString() }),
+    });
+
+    res.json({ success: true, message: 'AI auth state reset' });
+  } catch (error) {
+    console.error('AI auth reset error:', error);
+    res.status(500).json({ error: 'failed_to_reset_ai_auth' });
   }
 });
 

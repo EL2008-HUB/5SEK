@@ -253,6 +253,12 @@ function createCountryDetectionMiddleware() {
   app.use("/api/admin", require("./routes/admin"));
   app.use("/api/legal", require("./routes/legal"));
   app.use("/api/support", require("./routes/support"));
+  app.use("/api/events", require("./routes/events"));
+  app.use("/api/share", require("./routes/share"));
+  app.use("/api/comments", require("./routes/comments"));
+  app.use("/api/drops", require("./routes/drops"));
+  app.use("/api/fusion", require("./routes/fusion"));
+  app.use("/api/user-questions", require("./routes/userQuestions"));
 
   app.use((err, req, res, next) => {
     logger.errorObject("server_error", err, {

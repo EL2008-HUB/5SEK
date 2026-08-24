@@ -649,6 +649,36 @@ function validateEmptyBody(req, res, next) {
   return badRequest(res, "request body is not allowed");
 }
 
+function validateUserQuestionSubmit(req, res, next) {
+  const unknown = rejectUnknownFields(req, res, ["text", "category", "country"]);
+  if (unknown) return unknown;
+
+  if (!isNonEmptyString(req.body.text, { min: 10, max: 280 })) {
+    return badRequest(res, "Question must be between 10 and 280 characters");
+  }
+
+  if (req.body.category !== undefined && !isNonEmptyString(req.body.category, { min: 2, max: 64 })) {
+    return badRequest(res, "category must be a non-empty string");
+  }
+
+  if (req.body.country !== undefined && !isIsoCountryCode(req.body.country)) {
+    return badRequest(res, "country must be a valid country code");
+  }
+
+  return next();
+}
+
+function validateUserQuestionStatus(req, res, next) {
+  const unknown = rejectUnknownFields(req, res, ["status"]);
+  if (unknown) return unknown;
+
+  if (!isNonEmptyString(req.body.status) || !["approved", "rejected"].includes(req.body.status)) {
+    return badRequest(res, "status must be 'approved' or 'rejected'");
+  }
+
+  return next();
+}
+
 function ensureSelfOrAdmin(paramKey = "userId") {
   return (req, res, next) => {
     const targetUserId = Number(req.params[paramKey]);
@@ -692,4 +722,6 @@ module.exports = {
   validateRegister,
   validateResolveReport,
   validateSetDaily,
+  validateUserQuestionSubmit,
+  validateUserQuestionStatus,
 };

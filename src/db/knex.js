@@ -27,4 +27,7 @@ knex.on("query-error", (error, queryData) => {
   });
 });
 
+const { attachSlowQueryLogger } = require("../services/slowQueryLogger");
+attachSlowQueryLogger(knex);
+
 module.exports = knex;

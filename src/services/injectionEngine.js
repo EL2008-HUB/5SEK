@@ -14,6 +14,7 @@
  */
 
 const { generateQuestions, isAIEnabled } = require("./aiService");
+const { rankQuestionTexts, withQuestionQuality } = require("./questionQuality");
 const {
   recalculateAllScores,
   checkCrossCountryPotential,
@@ -26,10 +27,18 @@ const MIN_QUESTIONS_PER_COUNTRY = 15;
 const CROSS_COUNTRY_THRESHOLD = 80; // lower = more aggressive
 const HOT_ANSWERS_THRESHOLD = 10;   // answers within timeframe to = hot
 const HOT_TIME_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const MIN_AI_QUESTION_QUALITY = 55;
 
 function calculateQuestionsNeeded(currentCount) {
   const targetPoolSize = MIN_QUESTIONS_PER_COUNTRY * 3;
   return Math.min(5, Math.max(1, targetPoolSize - currentCount));
+}
+
+function pickQualityQuestions(questions, limit) {
+  const ranked = rankQuestionTexts(questions);
+  const strong = ranked.filter((item) => item.quality.adjustedScore >= MIN_AI_QUESTION_QUALITY);
+  const pool = strong.length > 0 ? strong : ranked.slice(0, 1);
+  return pool.slice(0, limit).map((item) => item.text);
 }
 
 /**
@@ -208,10 +217,11 @@ async function injectQuestionsForCountry(db, country) {
         // Get pattern insights for category assignment
         const patterns = await getTopPatterns(db, country, 5);
         const topPattern = patterns[0];
+        const rankedQuestions = pickQualityQuestions(questions, 2);
 
         const inserted = await db("questions")
           .insert(
-            questions.map((text) => ({
+            rankedQuestions.map((text) => withQuestionQuality({
               text,
               country,
               source: "ai",
@@ -234,9 +244,10 @@ async function injectQuestionsForCountry(db, country) {
   try {
     const questions = await generateQuestions(needed, db, null, country);
     if (questions.length > 0) {
+      const rankedQuestions = pickQualityQuestions(questions, needed);
       const inserted = await db("questions")
         .insert(
-          questions.map((text) => ({
+          rankedQuestions.map((text) => withQuestionQuality({
             text,
             country,
             source: "ai",

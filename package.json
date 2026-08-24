@@ -4,12 +4,26 @@
   "main": "index.ts",
   "scripts": {
     "start": "npx expo start",
+    "start:api": "node server.js",
     "android": "npx expo start --android",
     "ios": "npx expo start --ios",
     "web": "npx expo start --web",
     "typecheck": "npx tsc --noEmit",
     "config:check": "node scripts/check-app-config.js",
-    "e2e:assets": "node scripts/check-e2e-assets.js"
+    "e2e:assets": "node scripts/check-e2e-assets.js",
+    "db:check": "node scripts/check-db-connection.js",
+    "db:local:start": "node scripts/start-local-postgres.js start",
+    "db:local:stop": "node scripts/start-local-postgres.js stop",
+    "migrate": "npx knex migrate:latest",
+    "deploy:local": "node scripts/deploy-local-api.js",
+    "deploy:complete": "node scripts/deploy-complete.js",
+    "deploy:docker": "node scripts/deploy-docker.js",
+    "smoke:e2e": "node scripts/smoke-e2e.js",
+    "verify:golive": "node scripts/verify-golive.js",
+    "test:paypal": "node scripts/test-paypal.js",
+    "deploy:stop": "node scripts/stop-local-api.js",
+    "seed:docker": "node scripts/seed-docker-bootstrap.js",
+    "test:phases": "node --test --test-force-exit test/phase0.integration.test.js test/phase1.integration.test.js test/phase2.integration.test.js test/phase3.integration.test.js test/beachhead.test.js test/usageLimits.test.js test/feedComposer.test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

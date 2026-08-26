@@ -149,25 +149,18 @@ exports.trackEvents = async (req, res) => {
     }
 
     if (rows.length > 0) {
-      // FIX 1: Use onConflict to ignore duplicate event_ids
-      const hasEventIdColumn = rows.some((r) => r.event_id);
-      if (hasEventIdColumn) {
-        // Insert with conflict handling — duplicates are silently ignored
-        try {
-          await req.db("client_events")
-            .insert(rows)
-            .onConflict("event_id")
-            .ignore();
-        } catch (conflictErr) {
-          // Fallback: insert one by one, skip dupes
-          for (const row of rows) {
-            try {
-              await req.db("client_events").insert(row).onConflict("event_id").ignore();
-            } catch (_) {}
-          }
-        }
-      } else {
+      // Persist the batch. ON CONFLICT (event_id) is not used: the unique index
+      // from 20260428000003 is partial (WHERE event_id IS NOT NULL), which
+      // PostgreSQL will not infer for ON CONFLICT (event_id). Plain insert
+      // still rejects true duplicates via that index; remaining rows retry.
+      try {
         await req.db("client_events").insert(rows);
+      } catch (_) {
+        for (const row of rows) {
+          try {
+            await req.db("client_events").insert(row);
+          } catch (_) {}
+        }
       }
 
       // UPGRADE 2: Update answer_metrics in background (fire-and-forget)

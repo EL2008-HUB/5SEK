@@ -1,11 +1,12 @@
 /**
- * Production Event Pipeline — client_events table
+ * Widen client_events created by 20260420000013.
  *
- * Captures all user behavior signals:
- * view, watch, complete, skip, like, share, record_start, record_post
+ * 20260428000002 was `if (!hasTable) { create wide }` so it no-op'd on this
+ * database (table already existed) while knex still marked it applied.
+ * 20260428000003 only added event_id + position.
  *
- * Additive: 20260420000013 may have already created a narrow client_events.
- * If the table exists, add missing wide columns + indexes instead of no-op.
+ * This follow-up adds the remaining columns the event pipeline inserts and
+ * KPI queries need, plus the indexes 00002 originally intended.
  */
 
 const WIDE_COLUMNS = [
@@ -52,43 +53,17 @@ async function addMissingWideIndexes(knex) {
   }
 }
 
-exports.up = async function (knex) {
+exports.up = async function up(knex) {
   const hasTable = await knex.schema.hasTable("client_events");
-  if (!hasTable) {
-    await knex.schema.createTable("client_events", (table) => {
-      table.increments("id").primary();
-      table.integer("user_id").unsigned().nullable();
-      table.string("session_id", 50).nullable();
-      table.string("event_type", 30).notNullable();
-      table.string("entity_type", 20).nullable();
-      table.integer("entity_id").nullable();
-      table.float("watch_time").nullable();
-      table.float("duration").nullable();
-      table.json("metadata").nullable();
-      table.timestamp("created_at").defaultTo(knex.fn.now());
-
-      table.index(["user_id", "event_type"]);
-      table.index(["entity_type", "entity_id"]);
-      table.index(["event_type", "created_at"]);
-      table.index("session_id");
-    });
-    return;
-  }
+  if (!hasTable) return;
 
   await addMissingWideColumns(knex);
   await addMissingWideIndexes(knex);
 };
 
-exports.down = async function (knex) {
+exports.down = async function down(knex) {
   const hasTable = await knex.schema.hasTable("client_events");
   if (!hasTable) return;
-
-  // The table may have been created by 20260420000013 — only drop columns
-  // this migration adds, never the table itself.
-  const hasScreen = await knex.schema.hasColumn("client_events", "screen");
-  if (!hasScreen) {
-    return knex.schema.dropTableIfExists("client_events");
-  }
 
   for (const index of WIDE_INDEXES) {
     await knex.raw(`DROP INDEX IF EXISTS ${index.name}`);

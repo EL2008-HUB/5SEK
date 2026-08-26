@@ -20,7 +20,7 @@
     "seed:dev": "node scripts/seed-dev-data.js",
     "seed:staging": "node scripts/seed-staging.js",
     "smoke": "node scripts/smoke-check.js",
-    "test": "node test/run-tests.js"
+    "test": "node --test --test-force-exit \"test/*.test.js\""
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

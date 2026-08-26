@@ -115,6 +115,8 @@ exports.trackEvents = async (req, res) => {
 
     const userId = req.userId || null;
     const now = new Date().toISOString();
+    // A/B bucket is reported on every response, so it must outlive the ingest block below
+    const bucket = userId ? getBucket(userId) : "anon";
     let spamBlocked = 0;
 
     const rows = [];
@@ -183,7 +185,6 @@ exports.trackEvents = async (req, res) => {
       }
 
       // 🌍 Global Trending + 📊 KPI + 🔔 Notifications + 📁 Analytics
-      const bucket = userId ? getBucket(userId) : "anon";
       for (const row of rows) {
         try { ingestTrending(row); } catch (_) {}
         try { processKPIEvent(userId, row); } catch (_) {}
@@ -212,7 +213,7 @@ exports.trackEvents = async (req, res) => {
     res.json({ ok: true, accepted: rows.length, spam_blocked: spamBlocked, ab_bucket: bucket });
   } catch (error) {
     console.error("Event tracking error:", error);
-    res.json({ ok: false, accepted: 0 });
+    res.status(500).json({ ok: false, accepted: 0 });
   }
 };
 

@@ -38,16 +38,15 @@ async function getShareData(req, res) {
       .select(
         "answers.id",
         "answers.video_url",
-        "answers.audio_url",
-        "answers.text_answer",
+        "answers.video_url as audio_url",
         "answers.text_content",
-        "answers.duration",
+        "answers.text_content as text_answer",
         "answers.user_id",
         "answers.question_id",
         "questions.text as question_text",
         "questions.category",
         "questions.country",
-        "users.display_name",
+        "users.username as display_name",
         "users.username"
       )
       .where("answers.id", answerId)
@@ -59,7 +58,7 @@ async function getShareData(req, res) {
     const shareData = {
       answerId: answer.id,
       videoUrl: answer.video_url || answer.audio_url,
-      duration: answer.duration || 5,
+      duration: 5,
 
       // Question overlay
       question: answer.question_text || "Can you answer this?",

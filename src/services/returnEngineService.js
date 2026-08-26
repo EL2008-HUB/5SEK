@@ -68,14 +68,15 @@ async function recordRetentionNotification(db, userId, messageType, triggerReaso
  * @returns {Promise<{ title: string, body: string, message_type: string, trigger_reason: string }>}
  */
 async function buildReturnMessage(db, userId) {
-  // Check for new answers on user's questions (answers created after user's last_active)
+  // Check for new answers on user's questions (created after last_active on
+  // user_behavior_state — users.last_active never existed).
   const newAnswersRow = await db('answers as a')
     .join('questions as q', 'q.id', 'a.question_id')
-    .join('users as u', 'u.id', 'q.user_id')
+    .leftJoin('user_behavior_state as ubs', 'ubs.user_id', 'q.user_id')
     .where('q.user_id', userId)
     .where('a.user_id', '!=', userId)
     .where(function () {
-      this.whereRaw('a.created_at > u.last_active');
+      this.whereRaw('a.created_at > ubs.last_active');
     })
     .count('a.id as cnt')
     .first();
@@ -93,10 +94,10 @@ async function buildReturnMessage(db, userId) {
   // Check for new reactions (likes) on user's answers
   const newReactionsRow = await db('answer_reactions as ar')
     .join('answers as a', 'a.id', 'ar.answer_id')
-    .join('users as u', 'u.id', 'a.user_id')
+    .leftJoin('user_behavior_state as ubs', 'ubs.user_id', 'a.user_id')
     .where('a.user_id', userId)
     .where(function () {
-      this.whereRaw('ar.created_at > u.last_active');
+      this.whereRaw('ar.created_at > ubs.last_active');
     })
     .count('ar.id as cnt')
     .first()
@@ -115,11 +116,11 @@ async function buildReturnMessage(db, userId) {
   // Check if viral score increased > 50 points since last_active
   const viralRow = await db('question_stats as qs')
     .join('questions as q', 'q.id', 'qs.question_id')
-    .join('users as u', 'u.id', 'q.user_id')
+    .leftJoin('user_behavior_state as ubs', 'ubs.user_id', 'q.user_id')
     .where('q.user_id', userId)
     .where('qs.viral_score', '>', 50)
     .where(function () {
-      this.whereRaw('qs.viral_score_updated_at > u.last_active');
+      this.whereRaw('qs.viral_score_updated_at > ubs.last_active');
     })
     .first()
     .catch(() => null); // viral_score columns may not exist yet
@@ -152,24 +153,26 @@ async function buildReturnMessage(db, userId) {
 async function checkAndTriggerReturns(db) {
   const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  // Find users who have been inactive for 24+ hours and have push tokens
+  // Find users inactive for 24+ hours who have an active push token.
+  // Enablement is the inner join to push_tokens (users.push_notifications_enabled
+  // never existed). Inactivity lives on user_behavior_state.last_active.
   const inactiveUsers = await db('users as u')
     .join('push_tokens as pt', function () {
       this.on('pt.user_id', '=', 'u.id')
         .andOn(db.raw('pt.status = ?', ['active']))
         .andOnNull('pt.revoked_at');
     })
+    .leftJoin('user_behavior_state as ubs', 'ubs.user_id', 'u.id')
     .whereNull('u.deleted_at')
     .where(function () {
       this.whereNull('u.is_blocked').orWhere('u.is_blocked', false);
     })
     .where(function () {
-      // last_active is older than 24 hours ago
-      this.where('u.last_active', '<', cutoff24h)
-        .orWhereNull('u.last_active');
+      this.where('ubs.last_active', '<', cutoff24h)
+        .orWhereNull('ubs.last_active');
     })
-    .select('u.id as user_id', 'u.push_notifications_enabled')
-    .distinct('u.id as user_id', 'u.push_notifications_enabled');
+    .select('u.id as user_id')
+    .distinct('u.id as user_id');
 
   const checked = inactiveUsers.length;
   let triggered = 0;
@@ -177,21 +180,6 @@ async function checkAndTriggerReturns(db) {
 
   for (const user of inactiveUsers) {
     const userId = user.user_id;
-
-    // Check if notifications are disabled for this user
-    if (user.push_notifications_enabled === false) {
-      await recordRetentionNotification(
-        db,
-        userId,
-        'miss_you',
-        'user inactive for 24+ hours',
-        'notifications_disabled'
-      ).catch((err) => {
-        console.error(`Failed to record notifications_disabled for user ${userId}:`, err);
-      });
-      skipped += 1;
-      continue;
-    }
 
     // Rate limit: skip if already notified within 48 hours
     const alreadyNotified = await hasRecentRetentionNotification(db, userId, 48);

@@ -42,11 +42,13 @@ function verifyLayout() {
   }
 }
 
-function pgCtl(args, { capture = false } = {}) {
-  return spawnSync(PG_CTL, ["-D", DATA_DIR, ...args], {
-    encoding: "utf8",
-    stdio: capture ? "pipe" : "inherit",
-  });
+/**
+ * `stdio: "ignore"` matters for `start`: the launched server inherits whatever
+ * handles it is given and never exits, which would leave the caller's stdout
+ * open and hang any shell pipeline. Server output goes to LOG_FILE via -l.
+ */
+function pgCtl(args, { stdio = "pipe" } = {}) {
+  return spawnSync(PG_CTL, ["-D", DATA_DIR, ...args], { encoding: "utf8", stdio });
 }
 
 /**
@@ -56,7 +58,7 @@ function pgCtl(args, { capture = false } = {}) {
  * the same port, which would make a port probe report a false positive.
  */
 function isRunning() {
-  return pgCtl(["status"], { capture: true }).status === 0;
+  return pgCtl(["status"]).status === 0;
 }
 
 function portInUse() {
@@ -93,7 +95,7 @@ async function start() {
 
   await warnAboutForeignServer();
 
-  const result = pgCtl(["-l", LOG_FILE, "-o", `-p ${PORT}`, "-w", "start"]);
+  const result = pgCtl(["-l", LOG_FILE, "-o", `-p ${PORT}`, "-w", "start"], { stdio: "ignore" });
   if (result.status !== 0) {
     fail(`Failed to start PostgreSQL. See ${LOG_FILE} for details.`);
   }

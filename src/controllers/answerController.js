@@ -647,7 +647,7 @@ exports.getById = async (req, res) => {
       .select(
         "answers.*",
         "users.username",
-        "users.display_name",
+        "users.username as display_name",
         "questions.text as question_text",
         "questions.category as question_category"
       )

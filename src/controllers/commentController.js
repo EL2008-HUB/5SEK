@@ -94,7 +94,7 @@ exports.createComment = async (req, res) => {
     try {
       user = await req.db('users')
         .where('id', userId)
-        .select('id', 'username', 'display_name')
+        .select('id', 'username', 'username as display_name')
         .first();
     } catch (_) {}
 
@@ -144,7 +144,7 @@ exports.getComments = async (req, res) => {
         'comments.likes',
         'comments.created_at',
         'users.username',
-        'users.display_name'
+        'users.username as display_name'
       )
       .orderBy('comments.created_at', 'asc')
       .limit(limit)

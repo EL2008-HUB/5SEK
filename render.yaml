@@ -1,11 +1,10 @@
 services:
-  - name: 5sek-api
-    type: web
+  - type: web
+    name: 5sek-api
     runtime: node
-    rootDir: 5second-api
-    buildCommand: npm install
-    startCommand: npm start
-    healthCheckPath: /health
+    buildCommand: npm ci
+    startCommand: npm run start:api
+    healthCheckPath: /ready
     autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
@@ -15,4 +14,57 @@ services:
       - key: INLINE_BACKGROUND_WORKER
         value: false
       - key: INLINE_INJECTION_WORKER
+        value: false
+      - key: INLINE_DUEL_WORKER
+        value: false
+
+  - type: worker
+    name: 5sek-job-worker
+    runtime: node
+    buildCommand: npm ci
+    startCommand: node scripts/run-job-worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: INLINE_BACKGROUND_WORKER
+        value: false
+      - key: INLINE_INJECTION_WORKER
+        value: false
+      - key: INLINE_DUEL_WORKER
+        value: false
+
+  - type: worker
+    name: 5sek-injection-worker
+    runtime: node
+    buildCommand: npm ci
+    startCommand: node scripts/run-injection-worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: INLINE_BACKGROUND_WORKER
+        value: false
+      - key: INLINE_INJECTION_WORKER
+        value: false
+      - key: INLINE_DUEL_WORKER
+        value: false
+
+  - type: worker
+    name: 5sek-duel-worker
+    runtime: node
+    buildCommand: npm ci
+    startCommand: node scripts/run-duel-worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production
+      - key: INLINE_BACKGROUND_WORKER
+        value: false
+      - key: INLINE_INJECTION_WORKER
+        value: false
+      - key: INLINE_DUEL_WORKER
         value: false

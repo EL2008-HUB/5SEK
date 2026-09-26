@@ -97,14 +97,15 @@ class FeedCache {
     this._versions.set(country, current + 1);
   }
 
-  bumpScore(answerId, field) {
-    const bumpValue = field === "shares" ? 3 : field === "likes" ? 2 : 1;
+  bumpScore(answerId, field, delta = 1) {
+    const weight = field === "shares" ? 3 : field === "likes" ? 2 : 1;
+    const bumpValue = weight * delta;
     for (const [, entry] of this._store) {
       if (!entry.data || !Array.isArray(entry.data)) continue;
       const item = entry.data.find((i) => i.id === answerId);
       if (item) {
-        item[field] = (item[field] || 0) + 1;
-        item.feed_score = (item.feed_score || 0) + bumpValue;
+        item[field] = Math.max(0, (item[field] || 0) + delta);
+        item.feed_score = Math.max(0, (item.feed_score || 0) + bumpValue);
       }
     }
   }

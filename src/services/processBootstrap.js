@@ -1,6 +1,6 @@
 const { runInjectionCycle } = require("./injectionEngine");
 const { createDatabaseBackoffController } = require("./dbResilience");
-const { closeExpiredDuels } = require("./duelService");
+const { runDuelMaintenance } = require("./duelService");
 
 function readBooleanEnv(name, fallback) {
   const raw = process.env[name];
@@ -75,15 +75,39 @@ function startInjectionScheduler(db, {
 
 function startDuelScheduler(db, {
   initialDelayMs = Number(process.env.DUEL_INITIAL_DELAY_MS || 15 * 1000),
-  intervalMs = Number(process.env.DUEL_INTERVAL_MS || 5 * 60 * 1000),
+  intervalMs = Number(process.env.DUEL_INTERVAL_MS || 60 * 1000),
+  setTimeoutFn = setTimeout,
+  setIntervalFn = setInterval,
 } = {}) {
-  const runCycle = () =>
-    closeExpiredDuels(db).catch((error) => {
-      console.error("Duel closure cycle failed:", error);
-    });
+  const backoff = createDatabaseBackoffController({ label: "Duel scheduler" });
+  let running = false;
 
-  const timeout = setTimeout(runCycle, initialDelayMs);
-  const interval = setInterval(runCycle, intervalMs);
+  const runCycle = async () => {
+    if (running || !backoff.shouldRun()) return;
+    running = true;
+    try {
+      const result = await runDuelMaintenance(db);
+      backoff.onSuccess();
+      if (result.closed || result.matched || result.expired) {
+        console.log(
+          `Duel maintenance: closed=${result.closed} matched=${result.matched} expired=${result.expired}`
+        );
+      }
+    } catch (error) {
+      if (!backoff.onError(error)) {
+        console.error("Duel maintenance cycle failed:", error);
+      }
+    } finally {
+      running = false;
+    }
+  };
+
+  const timeout = setTimeoutFn(() => {
+    runCycle().catch(() => {});
+  }, initialDelayMs);
+  const interval = setIntervalFn(() => {
+    runCycle().catch(() => {});
+  }, intervalMs);
 
   return {
     stop() {

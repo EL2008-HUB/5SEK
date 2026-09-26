@@ -35,6 +35,7 @@ export default function TextAnswerScreen({ route, navigation }: any) {
     id: route?.params?.questionId,
     text: route?.params?.questionText,
   };
+  const challengeAnswerId = Number(route?.params?.challengeAnswerId) || null;
   const { user } = useAuth();
 
   const [phase, setPhase] = useState<Phase>("idle");
@@ -159,6 +160,31 @@ export default function TextAnswerScreen({ route, navigation }: any) {
         text_content: text.trim(),
       });
 
+      if (result.data?.duel_match?.duel_id) {
+        showAppAlert("Duel live", "Dikush te priste ne kete pyetje - dueli u hap automatikisht!");
+      }
+
+      if (challengeAnswerId && isFeatureEnabled("duels_v1") && result.data?.id) {
+        try {
+          const outcome = await duelsApi.challengeOrQueue(challengeAnswerId);
+          showAppAlert(
+            outcome.kind === "queued" ? "Je ne radhe" : "Duel live",
+            outcome.kind === "queued"
+              ? "Rivali eshte i zene. Dueli hapet automatikisht sa gjendet nje tjeter."
+              : "Dueli u krijua. Hap tab Duels."
+          );
+          resetToIdle();
+          if (typeof navigation.jumpTo === "function") navigation.jumpTo("Duels");
+          else navigation.navigate("Duels");
+          return;
+        } catch (challengeError: any) {
+          const serverError = challengeError?.response?.data?.error;
+          if (serverError === "active_duel_exists") {
+            showAppAlert("Nje duel ne kohe", "Ke nje duel aktiv.");
+          }
+        }
+      }
+
       setRewardData(result.data.reward || { response_time: responseTime, percentile: null, message: null });
       setDailyUsage(result.data.daily_usage || { used: 1, limit: 5, remaining: 4, is_premium: false });
       setCreatorActivation(result.data.creator_activation || null);
@@ -198,7 +224,7 @@ export default function TextAnswerScreen({ route, navigation }: any) {
       style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <LinearGradient colors={["#0A0A0A", "#101022", "#0A0A0A"]} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={["#050508", "#0E0A18", "#12081A"]} style={StyleSheet.absoluteFill} />
       <StatusBar style="light" />
 
       {/* Header */}
@@ -207,7 +233,7 @@ export default function TextAnswerScreen({ route, navigation }: any) {
           <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>
         <View style={styles.modeBadge}>
-          <Ionicons name="create-outline" size={14} color="#FF3366" />
+          <Ionicons name="create-outline" size={14} color="#FF2D6A" />
           <Text style={styles.modeBadgeText}>Text Answer</Text>
         </View>
         <View style={{ width: 44 }} />
@@ -225,7 +251,7 @@ export default function TextAnswerScreen({ route, navigation }: any) {
         {/* IDLE — start button */}
         {phase === "idle" && (
           <TouchableOpacity style={styles.startBtn} onPress={startCountdown} activeOpacity={0.9}>
-            <LinearGradient colors={["#FF3366", "#FF6B6B"]} style={styles.startBtnGradient}>
+            <LinearGradient colors={["#FF2D6A", "#FF5C8A"]} style={styles.startBtnGradient}>
               <Ionicons name="create" size={20} color="#FFF" />
               <Text style={styles.startBtnText}>⚡ Type in 5 seconds</Text>
             </LinearGradient>
@@ -303,21 +329,27 @@ export default function TextAnswerScreen({ route, navigation }: any) {
             if (creatingDuel) return;
             try {
               setCreatingDuel(true);
-              await duelsApi.createAuto({
-                questionId: question?.id || 1,
-                answerId: latestPostedAnswer.id,
-              });
-              showAppAlert("Duel live", "Your duel is now in the feed.");
+              const outcome = challengeAnswerId
+                ? await duelsApi.challengeOrQueue(challengeAnswerId)
+                : await duelsApi.createAutoOrQueue({
+                    questionId: question?.id || 1,
+                    answerId: latestPostedAnswer.id,
+                  });
+              showAppAlert(
+                outcome.kind === "queued" ? "Je ne radhe" : "Duel live",
+                outcome.kind === "queued"
+                  ? "Ende pa rival. Dueli hapet automatikisht sa dikush pergjigjet - te njoftojme."
+                  : "Dueli eshte live. Hap tab Duels."
+              );
               resetToIdle();
-              goFeed();
+              if (typeof navigation.jumpTo === "function") navigation.jumpTo("Duels");
+              else navigation.navigate("Duels");
             } catch (error: any) {
               const serverError = error?.response?.data?.error;
-              if (serverError === "no_opponent") {
-                showAppAlert("No opponent yet", "No one else has answered this question yet.");
-              } else if (serverError === "active_duel_exists") {
-                showAppAlert("One at a time", "You already have an active duel.");
+              if (serverError === "active_duel_exists") {
+                showAppAlert("Nje duel ne kohe", "Ke nje duel aktiv.");
               } else {
-                showAppAlert("Duel failed", "Could not create a duel right now.");
+                showAppAlert("Dueli deshtoi", "Provo perseri pas pak.");
               }
               resetToIdle();
               goFeed();

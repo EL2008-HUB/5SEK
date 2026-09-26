@@ -25,11 +25,11 @@ export default function AccountRequiredModal({
           <Text style={styles.message}>{message}</Text>
           <TouchableOpacity style={styles.primaryWrap} onPress={onCreateAccount} activeOpacity={0.9}>
             <LinearGradient colors={["#FF5A7A", "#FF3366"]} style={styles.primary}>
-              <Text style={styles.primaryText}>Create account</Text>
+              <Text style={styles.primaryText}>Krijo llogarine</Text>
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity style={styles.secondary} onPress={onDismiss}>
-            <Text style={styles.secondaryText}>Not now</Text>
+            <Text style={styles.secondaryText}>Jo tani</Text>
           </TouchableOpacity>
         </View>
       </View>

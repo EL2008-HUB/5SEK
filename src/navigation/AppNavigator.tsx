@@ -21,7 +21,9 @@ import AuthScreen from "../screens/AuthScreen";
 import FirstSessionFlowScreen, {
   consumePendingRecordIntent,
 } from "../screens/FirstSessionFlowScreen";
-import TrendingScreen from "../screens/TrendingScreen";
+import DuelsScreen from "../screens/DuelsScreen";
+import LeaderboardScreen from "../screens/LeaderboardScreen";
+import UpgradeAccountScreen from "../screens/UpgradeAccountScreen";
 import { isAllowedDeepLink } from "../services/deepLinks";
 import {
   consumePendingDeepLink,
@@ -66,18 +68,18 @@ function MainTabs() {
           let iconName: keyof typeof Ionicons.glyphMap = "home";
 
           if (route.name === "Home") iconName = focused ? "home" : "home-outline";
-          else if (route.name === "Trending") iconName = focused ? "flame" : "flame-outline";
+          else if (route.name === "Duels") iconName = focused ? "flash" : "flash-outline";
           else if (route.name === "Record") iconName = focused ? "radio-button-on" : "radio-button-off";
           else if (route.name === "Feed") iconName = focused ? "play-circle" : "play-circle-outline";
           else if (route.name === "Profile") iconName = focused ? "person" : "person-outline";
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: "#FF3366",
-        tabBarInactiveTintColor: "#888",
+        tabBarActiveTintColor: "#FF2D6A",
+        tabBarInactiveTintColor: "rgba(255,255,255,0.45)",
         tabBarStyle: {
-          backgroundColor: "#0A0A0A",
-          borderTopColor: "#1A1A2E",
+          backgroundColor: "#0A0A10",
+          borderTopColor: "rgba(255,45,106,0.18)",
           borderTopWidth: 1,
           height: 90,
           paddingBottom: 30,
@@ -91,7 +93,7 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeWithRecordIntent} />
-      <Tab.Screen name="Trending" component={TrendingScreen} />
+      <Tab.Screen name="Duels" component={DuelsScreen} />
       <Tab.Screen
         name="Record"
         component={RecordScreen}
@@ -159,7 +161,7 @@ export default function AppNavigator() {
         Main: {
           screens: {
             Home: "home",
-            Trending: "trending",
+            Duels: "duels",
             Record: "record",
             Feed: "feed",
             Profile: "profile",
@@ -171,6 +173,8 @@ export default function AppNavigator() {
         DeepAnswer2: "a/:answerId",
         TextAnswer: "text-answer",
         AudioAnswer: "audio-answer",
+        Leaderboard: "leaderboard",
+        UpgradeAccount: "upgrade",
         // Remix chain deep link
         RemixRecord: "remix/:parentAnswerId",
       },
@@ -257,6 +261,12 @@ export default function AppNavigator() {
             <Stack.Screen name="AudioAnswer" component={AudioAnswerScreen} />
             <Stack.Screen name="DeepAnswer" component={DeepAnswerScreen} />
             <Stack.Screen name="DeepAnswer2" component={DeepAnswerScreen} />
+            <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
+            <Stack.Screen
+              name="UpgradeAccount"
+              component={UpgradeAccountScreen}
+              options={{ animation: "slide_from_bottom" }}
+            />
             <Stack.Screen
               name="RemixRecord"
               component={RemixRecordScreen}

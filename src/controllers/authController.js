@@ -164,16 +164,143 @@ exports.register = async (req, res) => {
   }
 };
 
+const GUEST_EMAIL_DOMAIN = "guest.5sek.local";
+const GUEST_ADJECTIVES = ["shpejte", "guximtar", "qesharak", "misterioz", "zjarrte", "qete", "elektrik", "kozmik"];
+
+function randomToken(length = 8) {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+function buildGuestUsername() {
+  const adjective = GUEST_ADJECTIVES[Math.floor(Math.random() * GUEST_ADJECTIVES.length)];
+  return `vizitor_${adjective}_${randomToken(4)}`;
+}
+
+// Guest session: a real user row with role "guest" so every feature (answers, duels,
+// likes, streaks) works immediately. The guest can upgrade later without losing data.
+exports.guest = async (req, res) => {
+  try {
+    const country = req.body?.country ? String(req.body.country).toUpperCase() : req.detectedCountry || "GLOBAL";
+    const passwordHash = await bcrypt.hash(randomToken(24), 10);
+
+    let user = null;
+    for (let attempt = 0; attempt < 5 && !user; attempt += 1) {
+      const username = buildGuestUsername();
+      const email = `${username}-${randomToken(6)}@${GUEST_EMAIL_DOMAIN}`;
+      try {
+        const [created] = await req.db("users")
+          .insert({ username, email, password: passwordHash, country, role: "guest" })
+          .returning(["id", "username", "email", "country", "age_group", "interests", "created_at", "role"]);
+        user = created;
+      } catch (insertError) {
+        if (insertError.code !== "23505") throw insertError; // retry only on unique collision
+      }
+    }
+
+    if (!user) {
+      return res.status(503).json({ error: "guest_unavailable" });
+    }
+
+    incCounter("auth_guest_sessions_total");
+    const session = await issueAuthSession(req, user);
+    res.status(201).json({ user: shapeUser(user), ...session, guest: true });
+  } catch (error) {
+    console.error("Guest session error:", error);
+    res.status(500).json({ error: "guest_failed" });
+  }
+};
+
+// Upgrade a guest to a full account, keeping the same user id (answers, duels, likes stay).
+exports.upgrade = async (req, res) => {
+  try {
+    const current = req.authUser || (await loadAuthenticatedUser(req, req.userId));
+    if (!current) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+    if (current.role !== "guest") {
+      return res.status(409).json({ error: "already_registered" });
+    }
+
+    const username = String(req.body.username || "").trim();
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const { password, country } = req.body;
+
+    const conflict = await req.db("users")
+      .whereNot({ id: current.id })
+      .where(function lookup() {
+        this.whereRaw("LOWER(email) = ?", [email]).orWhereRaw("LOWER(username) = ?", [username.toLowerCase()]);
+      })
+      .first();
+    if (conflict) {
+      const field = String(conflict.email || "").toLowerCase() === email ? "email" : "username";
+      return res.status(409).json({ error: "User already exists", field });
+    }
+
+    const updates = {
+      username,
+      email,
+      password: await bcrypt.hash(password, 10),
+      role: "user",
+    };
+    if (country) updates.country = String(country).toUpperCase();
+
+    const [user] = await req.db("users")
+      .where({ id: current.id })
+      .update(updates)
+      .returning([
+        "id",
+        "username",
+        "email",
+        "country",
+        "age_group",
+        "interests",
+        "created_at",
+        "role",
+        "is_premium",
+        "subscription_status",
+        "premium_expires_at",
+      ]);
+
+    if (user.interests && typeof user.interests === "string") {
+      try { user.interests = JSON.parse(user.interests); } catch (_) {}
+    }
+
+    // Role changed: rotate every session so old guest tokens stop carrying role "guest".
+    await revokeAllUserSessions(req.db, user.id);
+    const session = await issueAuthSession(req, user);
+    incCounter("auth_guest_upgrades_total");
+
+    res.json({ user: shapeUser(user), ...session, upgraded: true });
+  } catch (error) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "User already exists" });
+    }
+    console.error("Upgrade guest error:", error);
+    res.status(500).json({ error: "upgrade_failed" });
+  }
+};
+
 // Login
 exports.login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const identifier = String(req.body.email || req.body.username || req.body.identifier || "").trim();
+    const { password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password required" });
+    if (!identifier || !password) {
+      return res.status(400).json({ error: "Email or username and password required" });
     }
 
-    const user = await req.db("users").where({ email }).first();
+    const needle = identifier.toLowerCase();
+    const user = await req.db("users")
+      .where(function lookup() {
+        this.whereRaw("LOWER(email) = ?", [needle]).orWhereRaw("LOWER(username) = ?", [needle]);
+      })
+      .first();
 
     if (!user) {
       incCounter("auth_failures_total", { reason: "user_not_found" });
@@ -412,7 +539,7 @@ async function authenticateRequest(req, res, next, { optional }) {
   const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, getJwtSecret());
+    const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ["HS256"] });
     const user = await loadAuthenticatedUser(req, decoded.id);
     if (isUserUnavailable(user)) {
       if (optional) {
@@ -446,10 +573,22 @@ async function authenticateRequest(req, res, next, { optional }) {
   }
 }
 
-exports.requireAdmin = (req, res, next) => {
-  if (!req.authUser || req.authUser.role !== "admin") {
+exports.requireAdmin = async (req, res, next) => {
+  if (!req.userId || !req.db) {
     return res.status(403).json({ error: "admin_required" });
   }
-
-  next();
+  try {
+    const user = await req.db("users")
+      .where("id", req.userId)
+      .select("role", "is_admin")
+      .first();
+    const adminRoles = new Set(["admin", "super_admin", "moderator"]);
+    const isAdmin = Boolean(user?.is_admin) || adminRoles.has(user?.role);
+    if (!isAdmin) {
+      return res.status(403).json({ error: "admin_required" });
+    }
+    return next();
+  } catch (error) {
+    return res.status(500).json({ error: "admin_check_failed" });
+  }
 };

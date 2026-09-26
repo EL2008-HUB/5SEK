@@ -11,6 +11,7 @@ const { adjustUserTrustScore } = require("../services/trustScoreService");
 const { kpiService } = require("../services/kpiService");
 const { isActiveDrop, recordDropAnswer } = require("../services/dropService");
 const { recordLoopAction, LOOP_ACTIONS, loadLoopState, persistLoopState } = require("../services/fusionLoopService");
+const { matchQueueForAnswer } = require("../services/duelService");
 const {
   applyActiveAnswerFilter,
   applyActiveQuestionFilter,
@@ -60,6 +61,24 @@ function resolveCountry(req) {
   if (req.body?.country) return req.body.country.toUpperCase();
   if (req.detectedCountry) return req.detectedCountry;
   return "GLOBAL";
+}
+
+// Attach liked_by_me to feed items for the current user. Never throws: feed must survive.
+async function attachLikedByMe(db, userId, items = []) {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  if (!userId) return items.map((item) => ({ ...item, liked_by_me: false }));
+
+  const ids = items.map((item) => item.id).filter((id) => Number.isInteger(id) && id > 0);
+  let likedSet = new Set();
+  if (ids.length > 0) {
+    try {
+      const rows = await db("answer_likes").whereIn("answer_id", ids).where("user_id", userId).select("answer_id");
+      likedSet = new Set(rows.map((row) => Number(row.answer_id)));
+    } catch (error) {
+      console.warn("liked_by_me lookup skipped:", error.message);
+    }
+  }
+  return items.map((item) => ({ ...item, liked_by_me: likedSet.has(Number(item.id)) }));
 }
 
 function countsToMap(rows = []) {
@@ -289,8 +308,15 @@ exports.create = async (req, res) => {
     const usageLimit = getEffectiveAnswerLimit(user, today);
     const creatorActivation = await buildCreatorActivation(req.db, answer, question_id, user_id);
 
+    // ⚔️ Someone waiting for a duel on this question? Open it now (never blocks the answer).
+    let duelMatch = null;
+    if (!answer.is_hidden) {
+      duelMatch = await matchQueueForAnswer(req.db, answer);
+    }
+
     res.status(201).json({
       ...hydrateAnswerRow(answer),
+      duel_match: duelMatch,
       reward: {
         response_time: answer.response_time,
         percentile: percentile,
@@ -612,11 +638,11 @@ exports.getFeed = async (req, res) => {
     if (!cursorParam && req.query.page) {
       const page = parseInt(req.query.page) || 1;
       const offset = (page - 1) * limit;
-      return res.json(personalizedFeed.slice(offset, offset + limit));
+      return res.json(await attachLikedByMe(req.db, userId, personalizedFeed.slice(offset, offset + limit)));
     }
 
     res.json({
-      items: result.items,
+      items: await attachLikedByMe(req.db, userId, result.items),
       nextCursor: result.nextCursor,
       hasMore: result.hasMore,
       meta: {
@@ -667,8 +693,11 @@ exports.getById = async (req, res) => {
       metrics = await req.db("answer_metrics").where("answer_id", answerId).first();
     } catch (_) {}
 
+    const [withLike] = await attachLikedByMe(req.db, req.userId || null, [{ id: answerId }]);
+
     res.json({
       ...hydrateAnswerRow(answer),
+      liked_by_me: Boolean(withLike?.liked_by_me),
       username: answer.username || "Anonymous",
       display_name: answer.display_name || answer.username || "Anonymous",
       question_text: answer.question_text || "",
@@ -723,26 +752,64 @@ exports.getByUser = async (req, res) => {
 };
 
 // Like an answer — also increments question's total_likes (country-aware)
+// Like / unlike toggle. Authenticated users get one like per answer (idempotent);
+// anonymous likes fall back to a plain counter bump.
 exports.likeAnswer = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(404).json({ error: "Answer not found" });
+    }
     const country = resolveCountry(req);
+    const userId = req.userId || null;
 
     const answer = await req.db("answers").where({ id }).whereNull("deleted_at").first();
     if (!answer) return res.status(404).json({ error: "Answer not found" });
 
-    await req.db("answers").where({ id }).increment("likes", 1);
-    await incrementCountryStat(req.db, answer.question_id, "likes", country);
+    let liked = true;
+    let delta = 1;
 
-    // Smart cache: bump score in-place instead of full invalidation
-    feedCache.bumpScore(parseInt(id), "likes");
+    if (userId) {
+      const outcome = await req.db.transaction(async (trx) => {
+        const existing = await trx("answer_likes").where({ answer_id: id, user_id: userId }).first();
+        if (existing) {
+          await trx("answer_likes").where({ id: existing.id }).del();
+          await trx("answers").where({ id }).where("likes", ">", 0).decrement("likes", 1);
+          return { liked: false, delta: -1 };
+        }
 
-    // Update embedding: like = strong positive signal
-    if (req.userId) {
-      updateEmbedding(req.db, req.userId, answer, "like").catch(() => {});
+        const inserted = await trx("answer_likes")
+          .insert({ answer_id: id, user_id: userId })
+          .onConflict(["answer_id", "user_id"])
+          .ignore()
+          .returning("id");
+        if (!inserted || inserted.length === 0) {
+          // Lost a race with a concurrent like from the same user: already liked.
+          return { liked: true, delta: 0 };
+        }
+
+        await trx("answers").where({ id }).increment("likes", 1);
+        return { liked: true, delta: 1 };
+      });
+      liked = outcome.liked;
+      delta = outcome.delta;
+    } else {
+      await req.db("answers").where({ id }).increment("likes", 1);
     }
 
-    res.json({ ok: true });
+    if (delta > 0) {
+      incrementCountryStat(req.db, answer.question_id, "likes", country).catch(() => {});
+      if (userId) {
+        updateEmbedding(req.db, userId, answer, "like").catch(() => {});
+      }
+    }
+    if (delta !== 0) {
+      // Smart cache: adjust score in-place instead of full invalidation
+      feedCache.bumpScore(id, "likes", delta);
+    }
+
+    const fresh = await req.db("answers").where({ id }).select("likes").first();
+    res.json({ ok: true, liked, likes: Math.max(0, Number(fresh?.likes ?? answer.likes ?? 0)) });
   } catch (error) {
     console.error("Like answer error:", error);
     res.status(500).json({ error: "Failed to like answer" });
@@ -752,7 +819,10 @@ exports.likeAnswer = async (req, res) => {
 // Share an answer — also increments question's total_shares (country-aware)
 exports.shareAnswer = async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(404).json({ error: "Answer not found" });
+    }
     const country = resolveCountry(req);
 
     const answer = await req.db("answers").where({ id }).whereNull("deleted_at").first();
@@ -762,7 +832,7 @@ exports.shareAnswer = async (req, res) => {
     await incrementCountryStat(req.db, answer.question_id, "shares", country);
 
     // Smart cache: bump score in-place
-    feedCache.bumpScore(parseInt(id), "shares");
+    feedCache.bumpScore(id, "shares");
 
     // Update embedding: share = strongest positive signal
     if (req.userId) {

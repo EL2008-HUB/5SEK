@@ -1,17 +1,17 @@
 const express = require("express");
 const router = express.Router();
 const { trackEvents, getEntityStats, getKPIDashboard } = require("../controllers/eventController");
-const { optionalAuthMiddleware, authMiddleware } = require("../controllers/authController");
+const { optionalAuthMiddleware, authMiddleware, requireAdmin } = require("../controllers/authController");
 const { getFeedContext, checkReturnTriggers, getCacheStats } = require("../services/behaviorStateEngine");
 
 // POST /api/events — batch event ingestion (works for both auth + anon users)
 router.post("/", optionalAuthMiddleware, trackEvents);
 
 // GET /api/events/stats — derived metrics (internal/admin)
-router.get("/stats", optionalAuthMiddleware, getEntityStats);
+router.get("/stats", authMiddleware, requireAdmin, getEntityStats);
 
 // GET /api/events/kpi — Day-1 KPI Dashboard
-router.get("/kpi", optionalAuthMiddleware, getKPIDashboard);
+router.get("/kpi", authMiddleware, requireAdmin, getKPIDashboard);
 
 // 🔥 v3: GET /api/events/state — Read pre-computed user behavior state
 router.get("/state", authMiddleware, (req, res) => {
@@ -26,7 +26,7 @@ router.get("/returns", authMiddleware, (req, res) => {
 });
 
 // 🔥 v3: GET /api/events/cache-stats — Engine cache stats (admin/debug)
-router.get("/cache-stats", optionalAuthMiddleware, (req, res) => {
+router.get("/cache-stats", authMiddleware, requireAdmin, (req, res) => {
   res.json(getCacheStats());
 });
 

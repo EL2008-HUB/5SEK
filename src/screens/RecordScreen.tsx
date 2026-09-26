@@ -23,7 +23,8 @@ import RewardOverlay from "../components/RewardOverlay";
 import ShareOverlay from "../components/ShareOverlay";
 import PaywallModal from "../components/PaywallModal";
 import { useAuth } from "../context/AuthContext";
-import { answersApi, duelsApi, paywallApi, paymentsApi } from "../services/api";
+import { DuelCreateResult, answersApi, duelsApi, paywallApi, paymentsApi, questionsApi } from "../services/api";
+import { storage } from "../services/storage";
 import { analytics } from "../services/analytics";
 import { isFeatureEnabled } from "../services/featureFlags";
 import {
@@ -37,6 +38,7 @@ import { canShowPaywall, markPaywallShown } from "../utils/paywallCooldown";
 
 const { width, height } = Dimensions.get("window");
 const MAX_DURATION = 5;
+const AUTO_DUEL_KEY = "@5sek_auto_duel";
 
 type RecordPhase =
   | "idle"
@@ -62,40 +64,40 @@ const MODE_OPTIONS: Array<{
     icon: "videocam",
     emoji: "🎥",
     label: "Video",
-    shortLabel: "Live camera",
-    hint: "Fast face-to-camera answer with a 3..2..1 start.",
+    shortLabel: "Trokit · 3…2…1 · 5 sekonda",
+    hint: "Kamera hapet vete dhe ndalon pas 5 sekondash.",
   },
   {
     id: "audio",
     icon: "mic",
     emoji: "🎤",
-    label: "Voice",
-    shortLabel: "Speak only",
-    hint: "Say it quickly with a clean mic-first flow.",
+    label: "Ze",
+    shortLabel: "Trokit dhe fol 5 sekonda",
+    hint: "Vetem zeri yt, pa kamera.",
   },
   {
     id: "text",
     icon: "create",
     emoji: "📝",
-    label: "Text",
-    shortLabel: "Type fast",
-    hint: "Type one quick thought before the timer kills it.",
+    label: "Tekst",
+    shortLabel: "Trokit dhe shkruaj ne 5 sekonda",
+    hint: "Nje mendim i shpejte, timer-i te shtyn.",
   },
   {
     id: "reaction",
     icon: "happy",
     emoji: "😳",
-    label: "React",
-    shortLabel: "Tap a vibe",
-    hint: "One-tap emoji answer for instant participation.",
+    label: "Reagim",
+    shortLabel: "Zgjidh nje reagim",
+    hint: "Nje trokitje dhe je brenda.",
   },
 ];
 
 const REACTION_OPTIONS = [
-  { emoji: "😳", label: "Caught off guard" },
-  { emoji: "😂", label: "Too funny" },
-  { emoji: "🤯", label: "Mind blown" },
-  { emoji: "😎", label: "Too easy" },
+  { emoji: "😳", label: "Me zuri gafil" },
+  { emoji: "😂", label: "Shume qesharake" },
+  { emoji: "🤯", label: "Me shpertheu truri" },
+  { emoji: "😎", label: "Shume e lehte" },
 ];
 
 function normalizeMode(entryMode: string | undefined): AnswerMode {
@@ -105,11 +107,16 @@ function normalizeMode(entryMode: string | undefined): AnswerMode {
 }
 
 export default function RecordScreen({ route, navigation }: any) {
-  const question = route?.params?.question || {
+  const routeQuestion = route?.params?.question || {
     id: route?.params?.questionId,
     text: route?.params?.questionText,
   };
+  const [fetchedQuestion, setFetchedQuestion] = useState<any>(null);
+  const question = routeQuestion?.id ? routeQuestion : fetchedQuestion || routeQuestion;
+  const [autoDuel, setAutoDuel] = useState(true);
+  const [duelOutcome, setDuelOutcome] = useState<DuelCreateResult | null>(null);
   const entryMode = route?.params?.mode;
+  const challengeAnswerId = Number(route?.params?.challengeAnswerId) || null;
   const { user } = useAuth();
   const cameraRef = useRef<any>(null);
   const hasStartedRef = useRef(false);
@@ -146,7 +153,36 @@ export default function RecordScreen({ route, navigation }: any) {
 
   useEffect(() => {
     getLatestFailedDraft("record").then(setFailedUploadDraft).catch(() => {});
+    storage
+      .getItem(AUTO_DUEL_KEY)
+      .then((value) => {
+        if (value === "0") setAutoDuel(false);
+      })
+      .catch(() => {});
   }, []);
+
+  // Opened from the tab bar without a question: load today's question.
+  useEffect(() => {
+    if (routeQuestion?.id) return;
+    let cancelled = false;
+    questionsApi
+      .getDaily()
+      .then((res) => {
+        if (!cancelled && res.data?.id) setFetchedQuestion(res.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [routeQuestion?.id]);
+
+  const toggleAutoDuel = () => {
+    Vibration.vibrate(8);
+    setAutoDuel((prev) => {
+      storage.setItem(AUTO_DUEL_KEY, prev ? "0" : "1").catch(() => {});
+      return !prev;
+    });
+  };
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -277,10 +313,13 @@ export default function RecordScreen({ route, navigation }: any) {
   );
 
   const canStart = selectedMode !== "reaction" || Boolean(selectedReaction);
-  const questionText = question?.text || "What is your answer?";
+  const questionText = question?.text || (question?.id ? "Pergjigju tani" : "Duke marre pyetjen e dites…");
   const canChallengeWithDuel =
     isFeatureEnabled("duels_v1") &&
-    Boolean(latestPostedAnswer?.id);
+    Boolean(latestPostedAnswer?.id) &&
+    !duelOutcome;
+  const socialProof = question?.social_proof;
+  const answersToday = Number(socialProof?.total_answers_today ?? 0);
 
   const goFeed = () => {
     if (typeof navigation.jumpTo === "function") {
@@ -288,6 +327,72 @@ export default function RecordScreen({ route, navigation }: any) {
       return;
     }
     navigation.navigate("Feed");
+  };
+
+  const goDuels = () => {
+    if (typeof navigation.jumpTo === "function") {
+      navigation.jumpTo("Duels");
+      return;
+    }
+    navigation.navigate("Duels");
+  };
+
+  const explainDuelError = (error: any) => {
+    const serverError = error?.response?.data?.error;
+    if (serverError === "no_opponent") {
+      showAppAlert("Ende pa rival", "Askush tjeter nuk e ka pergjigjur kete pyetje.");
+    } else if (serverError === "active_duel_exists") {
+      showAppAlert("Nje duel ne kohe", "Ke nje duel aktiv. Shko te Duels.");
+    } else if (serverError === "cannot_duel_yourself") {
+      showAppAlert("Duel", "Nuk mund te sfidosh veten.");
+    } else if (serverError === "need_own_answer") {
+      showAppAlert("Pergjigju fillimisht", "Posto pergjigjen tende dhe dueli niset automatikisht.");
+    } else {
+      showAppAlert("Dueli deshtoi", "Provo perseri pas pak.");
+    }
+  };
+
+  const announceDuelOutcome = (outcome: DuelCreateResult) => {
+    if (outcome.kind === "queued") {
+      showAppAlert("Je ne radhe per duel", "Ende pa rival ne kete pyetje. Dueli hapet automatikisht sa dikush pergjigjet.");
+    } else {
+      showAppAlert("Duel live", "Dueli u hap. Votimi zgjat 24 ore - shiko tab Duels.");
+    }
+  };
+
+  /** After a successful post: honor a pending challenge or the auto-duel switch. Never throws. */
+  const tryAutoDuel = async (posted: any) => {
+    if (!isFeatureEnabled("duels_v1") || !posted?.id) return null;
+
+    if (posted.duel_match?.duel_id) {
+      const matched: DuelCreateResult = { kind: "created", duel: { id: posted.duel_match.duel_id } };
+      setDuelOutcome(matched);
+      showAppAlert("Duel live", "Dikush te priste ne kete pyetje - dueli u hap automatikisht!");
+      return matched;
+    }
+
+    if (!challengeAnswerId && !autoDuel) return null;
+
+    try {
+      setCreatingDuel(true);
+      const outcome = challengeAnswerId
+        ? await duelsApi.challengeOrQueue(challengeAnswerId)
+        : await duelsApi.createAutoOrQueue({
+            questionId: posted.question_id || question?.id || 1,
+            answerId: posted.id,
+            videoA: posted.video_url || undefined,
+          });
+      setDuelOutcome(outcome);
+      announceDuelOutcome(outcome);
+      return outcome;
+    } catch (error: any) {
+      if (error?.response?.data?.error !== "active_duel_exists") {
+        explainDuelError(error);
+      }
+      return null;
+    } finally {
+      setCreatingDuel(false);
+    }
   };
 
   const checkDailyUsageOrShowPaywall = async () => {
@@ -379,6 +484,7 @@ export default function RecordScreen({ route, navigation }: any) {
       );
       setCreatorActivation(result.data.creator_activation || null);
       analytics.answerComplete("record", { mode: "reaction", question_id: question?.id || null });
+      await tryAutoDuel(result.data);
       setPhase("reward");
     } catch (error: any) {
       console.error("Reaction submit error:", error);
@@ -534,6 +640,8 @@ export default function RecordScreen({ route, navigation }: any) {
       setFailedUploadDraft(null);
       analytics.uploadCompleted("record", { answer_type: "video", question_id: question?.id || null });
       analytics.answerComplete("record", { mode: "video", question_id: question?.id || null });
+
+      await tryAutoDuel(result.data);
       setPhase("reward");
     } catch (error: any) {
       console.error("Upload error:", error);
@@ -619,28 +727,21 @@ export default function RecordScreen({ route, navigation }: any) {
     try {
       setCreatingDuel(true);
 
-      await duelsApi.createAuto({
-        questionId: latestPostedAnswer.question_id || question?.id || 1,
-        answerId: latestPostedAnswer.id,
-        videoA: latestPostedAnswer.video_url || null,
-      });
+      const outcome = challengeAnswerId
+        ? await duelsApi.challengeOrQueue(challengeAnswerId)
+        : await duelsApi.createAutoOrQueue({
+            questionId: latestPostedAnswer.question_id || question?.id || 1,
+            answerId: latestPostedAnswer.id,
+            videoA: latestPostedAnswer.video_url || undefined,
+          });
 
-      showAppAlert("Duel live", "Your duel is now in the feed.");
+      announceDuelOutcome(outcome);
       resetToIdle();
-      goFeed();
+      goDuels();
     } catch (error: any) {
-      const serverError = error?.response?.data?.error;
-
-      if (serverError === "no_opponent") {
-        showAppAlert("No opponent yet", "No one else has answered this question yet.");
-      } else if (serverError === "active_duel_exists") {
-        showAppAlert("One duel at a time", "You already have an active duel.");
-      } else {
-        showAppAlert("Duel failed", "Could not create a duel right now.");
-      }
-
+      explainDuelError(error);
       resetToIdle();
-      goFeed();
+      goDuels();
     } finally {
       setCreatingDuel(false);
     }
@@ -654,143 +755,47 @@ export default function RecordScreen({ route, navigation }: any) {
     setLatestPostedAnswer(null);
     setCreatorActivation(null);
     setCreatingDuel(false);
+    setDuelOutcome(null);
     setRecordedUri(null);
     setShowCamera(false);
     hasStartedRef.current = false;
   };
 
-  const renderIdleDynamicArea = () => {
-    if (selectedMode === "video") {
-      return (
-        <View style={styles.dynamicCard}>
-          <View style={styles.videoPreviewShell}>
-            <LinearGradient
-              colors={["rgba(0,210,255,0.16)", "rgba(108,92,231,0.18)"]}
-              style={styles.videoPreviewGlow}
-            />
-            <View style={styles.videoPreviewFrame}>
-              <Ionicons
-                name={permission?.granted ? "scan" : "lock-closed"}
-                size={44}
-                color="#9ADFFF"
-              />
-              <Text style={styles.dynamicTitle}>
-                {permission?.granted ? "Camera preview opens on start" : "Camera access needed"}
-              </Text>
-              <Text style={styles.dynamicSubtext}>
-                {permission?.granted
-                  ? "3…2…1 then live preview and auto-stop at 5 seconds."
-                  : "Pick Video to request permission, or choose another mode."}
-              </Text>
-            </View>
-            <View style={styles.recordHintPill}>
-              <View style={styles.recordDot} />
-              <Text style={styles.recordHintText}>Hold to rec feel</Text>
-            </View>
-          </View>
-        </View>
-      );
-    }
+  const renderReactionPicker = () => (
+    <View style={styles.reactionGrid}>
+      {REACTION_OPTIONS.map((option) => {
+        const isActive = option.emoji === selectedReaction;
+        return (
+          <TouchableOpacity
+            key={option.emoji}
+            style={[styles.reactionChip, isActive && styles.reactionChipActive]}
+            activeOpacity={0.9}
+            onPress={() => {
+              Vibration.vibrate(10);
+              setSelectedReaction(option.emoji);
+            }}
+          >
+            <Text style={[styles.reactionEmoji, isActive && styles.reactionEmojiActive]}>
+              {option.emoji}
+            </Text>
+            <Text style={[styles.reactionLabel, isActive && styles.reactionLabelActive]}>
+              {option.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
 
-    if (selectedMode === "audio") {
-      return (
-        <View style={styles.dynamicCard}>
-          <View style={styles.audioOrb}>
-            <LinearGradient
-              colors={["rgba(0,210,255,0.25)", "rgba(108,92,231,0.25)"]}
-              style={styles.audioOrbFill}
-            >
-              <Ionicons name="mic" size={40} color="#EAFBFF" />
-            </LinearGradient>
-          </View>
-          <Text style={styles.dynamicTitle}>Speak now</Text>
-          <View style={styles.waveRow}>
-            {[0, 1, 2, 3, 4, 5].map((index) => (
-              <Animated.View
-                key={index}
-                style={[
-                  styles.waveBar,
-                  {
-                    transform: [
-                      {
-                        scaleY: waveAnim.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.45 + index * 0.03, 1.1 - index * 0.05],
-                        }),
-                      },
-                    ],
-                    opacity: waveAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.45, 1],
-                    }),
-                  },
-                ]}
-              />
-            ))}
-          </View>
-          <Text style={styles.dynamicSubtext}>Waveform wakes up the moment you hit start.</Text>
-        </View>
-      );
-    }
-
-    if (selectedMode === "text") {
-      return (
-        <View style={styles.dynamicCard}>
-          <View style={styles.textPreviewCard}>
-            <View style={styles.textPreviewHeader}>
-              <Text style={styles.textPreviewLabel}>Type your answer</Text>
-              <View style={styles.textPreviewTimer}>
-                <Text style={styles.textPreviewTimerText}>auto submit</Text>
-              </View>
-            </View>
-            <View style={styles.textPreviewField}>
-              <Text style={styles.textPreviewPlaceholder}>Type your answer…</Text>
-            </View>
-            <Text style={styles.dynamicSubtext}>Keyboard opens instantly and the timer keeps pressure high.</Text>
-          </View>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.dynamicCard}>
-        <Text style={styles.dynamicTitle}>Tap your reaction</Text>
-        <View style={styles.reactionGrid}>
-          {REACTION_OPTIONS.map((option) => {
-            const isActive = option.emoji === selectedReaction;
-            return (
-              <TouchableOpacity
-                key={option.emoji}
-                style={[styles.reactionChip, isActive && styles.reactionChipActive]}
-                activeOpacity={0.9}
-                onPress={() => {
-                  Vibration.vibrate(10);
-                  setSelectedReaction(option.emoji);
-                }}
-              >
-                <Text style={[styles.reactionEmoji, isActive && styles.reactionEmojiActive]}>
-                  {option.emoji}
-                </Text>
-                <Text style={[styles.reactionLabel, isActive && styles.reactionLabelActive]}>
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        <Text style={styles.dynamicSubtext}>
-          Quick-select mode. Pick one vibe and send it instantly.
-        </Text>
-      </View>
-    );
-  };
+  const bigButtonIcon: keyof typeof Ionicons.glyphMap =
+    selectedMode === "video" ? "videocam" : selectedMode === "audio" ? "mic" : selectedMode === "text" ? "create" : "happy";
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
 
       <LinearGradient
-        colors={["#090C17", "#0F0F1A", "#14142A"]}
+        colors={["#050508", "#0E0A18", "#12081A"]}
         style={StyleSheet.absoluteFill}
       />
       <View style={styles.bgOrbTop} />
@@ -872,91 +877,143 @@ export default function RecordScreen({ route, navigation }: any) {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.answerShell}>
-            <View style={styles.topSection}>
-              <Text style={styles.screenKicker}>ANSWER</Text>
-              <Text style={styles.answerQuestion} numberOfLines={2}>
-                {questionText}
-              </Text>
-              <Animated.View
-                style={[styles.timerBadge, { transform: [{ scale: timerPulse }] }]}
-              >
-                <Text style={styles.timerBadgeIcon}>⏱</Text>
-                <Text style={styles.timerBadgeText}>05</Text>
+            {/* Question hero */}
+            <View style={styles.heroTop}>
+              <View style={styles.heroTag}>
+                <Ionicons name="flash" size={12} color="#FF2D6A" />
+                <Text style={styles.heroTagText}>
+                  {challengeAnswerId ? "SFIDE DUEL" : "PYETJA E DITES"}
+                </Text>
+              </View>
+              <Animated.View style={[styles.timerBadge, { transform: [{ scale: timerPulse }] }]}>
+                <Text style={styles.timerBadgeText}>5s</Text>
               </Animated.View>
             </View>
 
-            <View style={styles.selectorSection}>
-              <Text style={styles.sectionLabel}>Select mode</Text>
-              <View style={styles.modeSelector}>
-                {MODE_OPTIONS.map((mode) => {
-                  const isActive = selectedMode === mode.id;
-                  return (
-                    <TouchableOpacity
-                      key={mode.id}
-                      style={[styles.modePill, isActive && styles.modePillActive]}
-                      activeOpacity={0.9}
-                      onPress={() => {
-                        Vibration.vibrate(10);
-                        setSelectedMode(mode.id);
-                      }}
-                    >
-                      <Text style={styles.modeEmoji}>{mode.emoji}</Text>
-                      <Ionicons
-                        name={mode.icon}
-                        size={22}
-                        color={isActive ? "#EAFBFF" : "rgba(234,251,255,0.75)"}
-                      />
-                      <Text style={[styles.modeLabel, isActive && styles.modeLabelActive]}>
-                        {mode.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            <Text style={styles.answerQuestion} numberOfLines={3}>
+              {questionText}
+            </Text>
+
+            <View style={styles.proofRow}>
+              <View style={styles.proofAvatars}>
+                {["A", "B", "C"].map((letter, index) => (
+                  <View key={letter} style={[styles.proofAvatar, { marginLeft: index === 0 ? 0 : -8 }]}>
+                    <Text style={styles.proofAvatarText}>{letter}</Text>
+                  </View>
+                ))}
               </View>
+              <Text style={styles.proofText}>
+                {answersToday > 0
+                  ? `${answersToday} u pergjigjen sot${socialProof?.avg_response_time ? ` · mesatarja ${socialProof.avg_response_time}s` : ""}`
+                  : "Behu i pari qe pergjigjet sot"}
+              </Text>
             </View>
 
-            <View style={styles.dynamicSection}>
-              <View style={styles.dynamicHeader}>
-                <Text style={styles.dynamicHeaderTitle}>{selectedModeConfig.shortLabel}</Text>
-                <Text style={styles.dynamicHeaderHint}>{selectedModeConfig.hint}</Text>
-              </View>
-              {renderIdleDynamicArea()}
-            </View>
-
-            {failedUploadDraft && (
-              <TouchableOpacity style={styles.resumeCard} activeOpacity={0.9} onPress={retryFailedUpload}>
-                <Text style={styles.resumeTitle}>Upload still pending</Text>
-                <Text style={styles.resumeBody}>Retry the last video submission from where the network failed.</Text>
-              </TouchableOpacity>
-            )}
-
-            <Animated.View style={{ transform: [{ scale: startPulse }] }}>
+            {/* One big tap target */}
+            <View style={styles.bigBtnWrap}>
+              <Animated.View style={[styles.bigBtnRing, { transform: [{ scale: startPulse }] }]} />
               <TouchableOpacity
-                style={[styles.startBtn, !canStart && styles.startBtnDisabled]}
-                activeOpacity={canStart ? 0.92 : 1}
+                style={[styles.bigBtn, !canStart && styles.bigBtnDisabled]}
+                activeOpacity={canStart ? 0.9 : 1}
                 onPress={handleStart}
                 disabled={!canStart}
               >
                 <LinearGradient
-                  colors={["#00D2FF", "#6C5CE7"]}
+                  colors={canStart ? ["#FF2D6A", "#8B5CFF"] : ["#2A2A36", "#2A2A36"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.startBtnGradient}
+                  style={styles.bigBtnFill}
                 >
-                  <Text style={styles.startBtnText}>
-                    {selectedMode === "video" && !permission?.granted
-                      ? "START VIDEO"
-                      : "START"}
-                  </Text>
+                  <Ionicons name={bigButtonIcon} size={46} color="#FFF" />
                 </LinearGradient>
               </TouchableOpacity>
-            </Animated.View>
+              <Text style={styles.bigBtnLabel}>
+                {selectedMode === "reaction" && selectedReaction
+                  ? `Dergo ${selectedReaction}`
+                  : selectedModeConfig.shortLabel}
+              </Text>
+              <Text style={styles.bigBtnHint}>{selectedModeConfig.hint}</Text>
+            </View>
 
-            <Text style={styles.startHelper}>
-              {canStart
-                ? `One decision only: ${selectedModeConfig.label}. Then go.`
-                : "Pick a reaction first to unlock Start."}
-            </Text>
+            {/* Compact mode chips */}
+            <View style={styles.modeRow}>
+              {MODE_OPTIONS.map((mode) => {
+                const isActive = selectedMode === mode.id;
+                return (
+                  <TouchableOpacity
+                    key={mode.id}
+                    style={[styles.modeChip, isActive && styles.modeChipActive]}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      Vibration.vibrate(10);
+                      setSelectedMode(mode.id);
+                    }}
+                  >
+                    <Ionicons
+                      name={mode.icon}
+                      size={16}
+                      color={isActive ? "#FFFFFF" : "rgba(255,255,255,0.6)"}
+                    />
+                    <Text style={[styles.modeChipText, isActive && styles.modeChipTextActive]}>
+                      {mode.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {selectedMode === "reaction" ? renderReactionPicker() : null}
+
+            {selectedMode === "video" && !permission?.granted ? (
+              <View style={styles.permissionNote}>
+                <Ionicons name="lock-closed-outline" size={14} color="#FFC857" />
+                <Text style={styles.permissionNoteText}>Kamera kerkohet ne trokitjen e pare.</Text>
+              </View>
+            ) : null}
+
+            {/* Auto-duel switch: the growth loop */}
+            {isFeatureEnabled("duels_v1") && !challengeAnswerId ? (
+              <TouchableOpacity style={[styles.duelToggle, autoDuel && styles.duelToggleOn]} onPress={toggleAutoDuel} activeOpacity={0.9}>
+                <View style={styles.duelToggleIcon}>
+                  <Text style={styles.duelToggleEmoji}>⚔️</Text>
+                </View>
+                <View style={styles.duelToggleCopy}>
+                  <Text style={styles.duelToggleTitle}>Hap duel pas postimit</Text>
+                  <Text style={styles.duelToggleSub}>
+                    {autoDuel
+                      ? "Sfidon automatikisht nje pergjigje tjeter. Votohet 24 ore."
+                      : "Vetem posto. Mund te sfidosh me vone nga feed-i."}
+                  </Text>
+                </View>
+                <View style={[styles.switchTrack, autoDuel && styles.switchTrackOn]}>
+                  <View style={[styles.switchKnob, autoDuel && styles.switchKnobOn]} />
+                </View>
+              </TouchableOpacity>
+            ) : null}
+
+            {challengeAnswerId ? (
+              <View style={[styles.duelToggle, styles.duelToggleOn]}>
+                <View style={styles.duelToggleIcon}>
+                  <Text style={styles.duelToggleEmoji}>⚔️</Text>
+                </View>
+                <View style={styles.duelToggleCopy}>
+                  <Text style={styles.duelToggleTitle}>Sfida niset pas postimit</Text>
+                  <Text style={styles.duelToggleSub}>Pergjigja jote futet direkt ne duel me ate qe zgjodhe.</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {failedUploadDraft && (
+              <TouchableOpacity style={styles.resumeCard} activeOpacity={0.9} onPress={retryFailedUpload}>
+                <Text style={styles.resumeTitle}>Nje video pret ngarkimin</Text>
+                <Text style={styles.resumeBody}>Trokit per ta riprovuar - nuk ke humbur asgje.</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.feedLink} onPress={goFeed} activeOpacity={0.8}>
+              <Text style={styles.feedLinkText}>Shiko si u pergjigjen te tjeret</Text>
+              <Ionicons name="arrow-forward" size={14} color="rgba(255,255,255,0.7)" />
+            </TouchableOpacity>
           </View>
         </ScrollView>
       )}
@@ -1011,7 +1068,7 @@ export default function RecordScreen({ route, navigation }: any) {
                 onPress={() => handleUpload(recordedUri)}
               >
                 <LinearGradient
-                  colors={["#00D2FF", "#6C5CE7"]}
+                  colors={["#FF2D6A", "#8B5CFF"]}
                   style={styles.postBtnGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -1070,7 +1127,7 @@ export default function RecordScreen({ route, navigation }: any) {
                 onPress={retryFailedUpload}
               >
                 <LinearGradient
-                  colors={["#FF5A7A", "#FF3366"]}
+                  colors={["#FF2D6A", "#FF5C8A"]}
                   style={styles.postBtnGradient}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -1089,8 +1146,10 @@ export default function RecordScreen({ route, navigation }: any) {
           dailyUsage={dailyUsage || { used: 1, limit: 5, remaining: 4, is_premium: false }}
           creatorActivation={creatorActivation}
           onViewFeed={() => {
+            const hadDuel = Boolean(duelOutcome);
             resetToIdle();
-            goFeed();
+            if (hadDuel) goDuels();
+            else goFeed();
           }}
           onDone={resetToIdle}
           onUpgrade={() => {
@@ -1173,7 +1232,7 @@ export default function RecordScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F0F1A",
+    backgroundColor: "#050508",
   },
   bgOrbTop: {
     position: "absolute",
@@ -1182,7 +1241,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 120,
-    backgroundColor: "rgba(0, 210, 255, 0.08)",
+    backgroundColor: "rgba(255, 45, 106, 0.16)",
   },
   bgOrbBottom: {
     position: "absolute",
@@ -1191,7 +1250,7 @@ const styles = StyleSheet.create({
     width: 280,
     height: 280,
     borderRadius: 140,
-    backgroundColor: "rgba(108, 92, 231, 0.12)",
+    backgroundColor: "rgba(139, 92, 255, 0.16)",
   },
   answerScroll: {
     paddingTop: 44,
@@ -1272,9 +1331,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.08)",
   },
   modePillActive: {
-    backgroundColor: "rgba(0,210,255,0.12)",
-    borderColor: "rgba(0,210,255,0.45)",
-    shadowColor: "#6C5CE7",
+    backgroundColor: "rgba(255,45,106,0.12)",
+    borderColor: "rgba(255,45,106,0.45)",
+    shadowColor: "#FF2D6A",
     shadowOpacity: 0.4,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
@@ -1761,5 +1820,219 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
     lineHeight: 20,
+  },
+  heroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 22,
+    marginBottom: 14,
+  },
+  heroTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,45,106,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,45,106,0.3)",
+  },
+  heroTagText: {
+    color: "#FF8FB0",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.6,
+  },
+  proofRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 26,
+  },
+  proofAvatars: {
+    flexDirection: "row",
+  },
+  proofAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#8B5CFF",
+    borderWidth: 2,
+    borderColor: "#0E0A18",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  proofAvatarText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  proofText: {
+    color: "rgba(255,255,255,0.68)",
+    fontSize: 13,
+    fontWeight: "700",
+    flex: 1,
+  },
+  bigBtnWrap: {
+    alignItems: "center",
+    marginBottom: 22,
+  },
+  bigBtnRing: {
+    position: "absolute",
+    top: -14,
+    width: 168,
+    height: 168,
+    borderRadius: 84,
+    backgroundColor: "rgba(255,45,106,0.14)",
+  },
+  bigBtn: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    overflow: "hidden",
+    shadowColor: "#FF2D6A",
+    shadowOpacity: 0.5,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 16,
+  },
+  bigBtnDisabled: {
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  bigBtnFill: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bigBtnLabel: {
+    color: "#FFFFFF",
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 18,
+    textAlign: "center",
+  },
+  bigBtnHint: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 4,
+    textAlign: "center",
+  },
+  modeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 14,
+  },
+  modeChip: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  modeChipActive: {
+    backgroundColor: "rgba(255,45,106,0.16)",
+    borderColor: "rgba(255,45,106,0.55)",
+  },
+  modeChipText: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  modeChipTextActive: {
+    color: "#FFFFFF",
+  },
+  permissionNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+  permissionNoteText: {
+    color: "#FFC857",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  duelToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    marginBottom: 14,
+  },
+  duelToggleOn: {
+    backgroundColor: "rgba(139,92,255,0.12)",
+    borderColor: "rgba(139,92,255,0.45)",
+  },
+  duelToggleIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  duelToggleEmoji: {
+    fontSize: 20,
+  },
+  duelToggleCopy: {
+    flex: 1,
+  },
+  duelToggleTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  duelToggleSub: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  switchTrack: {
+    width: 46,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    padding: 3,
+    justifyContent: "center",
+  },
+  switchTrackOn: {
+    backgroundColor: "#8B5CFF",
+  },
+  switchKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#FFFFFF",
+  },
+  switchKnobOn: {
+    alignSelf: "flex-end",
+  },
+  feedLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+  },
+  feedLinkText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
+    fontWeight: "700",
   },
 });

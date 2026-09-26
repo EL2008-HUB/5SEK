@@ -7,6 +7,9 @@ const { API_CONTRACT, API_VERSION, CONTRACT_NAME } = require("./services/contrac
 const { getAllowedCorsOrigins, getAppEnv, getTrustedProxyHops, requireHttpsInEdge } = require("./config/runtime");
 const { createRequestLogger, logger } = require("./services/logger");
 const { recordHttpRequest, renderPrometheusMetrics } = require("./services/metricsService");
+const { createMetricsAuthMiddleware } = require("./middleware/metricsAuth");
+const { termsDocument, privacyDocument, renderLegalHtml } = require("./services/legalContent");
+const { authMiddleware } = require("./controllers/authController");
 
 function getStartupSnapshot(startupState) {
   if (!startupState) {
@@ -200,7 +203,41 @@ function createCountryDetectionMiddleware() {
     res.json(API_CONTRACT);
   });
 
-  app.get("/metrics", async (req, res) => {
+  app.get("/legal/terms", (req, res) => {
+    res.type("html").send(renderLegalHtml({ title: "Terms of Service", document: termsDocument }));
+  });
+
+  app.get("/legal/privacy", (req, res) => {
+    res.type("html").send(renderLegalHtml({ title: "Privacy Policy", document: privacyDocument }));
+  });
+
+  app.get("/.well-known/apple-app-site-association", (req, res) => {
+    const teamId = process.env.APPLE_TEAM_ID || "TEAMID";
+    const bundleId = process.env.IOS_BUNDLE_ID || "app.fivesek.mobile";
+    res.json({
+      applinks: {
+        apps: [],
+        details: [{ appID: `${teamId}.${bundleId}`, paths: ["/a/*", "/feed", "/feed/*"] }],
+      },
+    });
+  });
+
+  app.get("/.well-known/assetlinks.json", (req, res) => {
+    const packageName = process.env.ANDROID_PACKAGE || "app.fivesek.mobile";
+    const sha256 = process.env.ANDROID_SHA256_FINGERPRINT || "";
+    res.json([
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: packageName,
+          sha256_cert_fingerprints: sha256 ? [sha256] : [],
+        },
+      },
+    ]);
+  });
+
+  app.get("/metrics", createMetricsAuthMiddleware(), async (req, res) => {
     try {
       const metrics = await renderPrometheusMetrics(db);
       res.setHeader("Content-Type", "text/plain; version=0.0.4");
@@ -211,7 +248,7 @@ function createCountryDetectionMiddleware() {
     }
   });
 
-  app.get("/health/detailed", async (req, res) => {
+  app.get("/health/detailed", authMiddleware, async (req, res) => {
     if (startupState && !startupState.ready) {
       return res.status(503).json({
         status: "starting",
@@ -231,10 +268,10 @@ function createCountryDetectionMiddleware() {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
+      logger.errorObject("health_detailed_failed", error);
       res.status(500).json({
         status: "unhealthy",
         db: "error",
-        error: error.message,
       });
     }
   });
@@ -243,6 +280,7 @@ function createCountryDetectionMiddleware() {
   app.use("/api/questions", require("./routes/questions"));
   app.use("/api/answers", require("./routes/answers"));
   app.use("/api/duels", require("./routes/duels"));
+  app.use("/api/leaderboard", require("./routes/leaderboard"));
   app.use("/api/paywall", require("./routes/paywall"));
   app.use("/api/ai", require("./routes/ai"));
   app.use("/api/uploads", require("./routes/uploads"));
@@ -266,6 +304,10 @@ function createCountryDetectionMiddleware() {
       route: req.originalUrl || req.url,
       user_id: req.userId || null,
     });
+    try {
+      const { captureException } = require("./services/sentryService");
+      captureException(err, { route: req.originalUrl || req.url, user_id: req.userId || null });
+    } catch (_) {}
     if (String(err.message || "") === "cors_origin_denied") {
       return res.status(403).json({ error: "cors_origin_denied" });
     }

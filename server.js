@@ -1,9 +1,22 @@
 const { bootstrapEnv } = require("./src/config/bootstrapEnv");
 bootstrapEnv(__dirname);
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET environment variable is required");
-}
+const { validateRuntimeEnv } = require("./src/config/validateRuntimeEnv");
+const { initSentry, captureException } = require("./src/services/sentryService");
+
+validateRuntimeEnv({ exitOnFailure: true });
+initSentry();
+
+process.on("unhandledRejection", (error) => {
+  console.error("Unhandled rejection:", error);
+  captureException(error, { source: "unhandledRejection" });
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception:", error);
+  captureException(error, { source: "uncaughtException" });
+  process.exit(1);
+});
 
 const db = require("./src/db/knex");
 const { createApp } = require("./src/app");
@@ -37,15 +50,17 @@ async function startServer() {
   let server = null;
 
   try {
+    updateStartupState({ phase: "running_migrations" });
+    await db.migrate.latest();
+    console.log("Database migrations up to date");
+
     updateStartupState({ phase: "binding_port" });
 
     server = await new Promise((resolve, reject) => {
       const createdServer = app.listen(PORT, "0.0.0.0", () => {
         console.log(`5SEK API listening on 0.0.0.0:${PORT}`);
-        console.log("Startup state: waiting for migrations");
         resolve(createdServer);
       });
-
       createdServer.on("error", reject);
     });
 
@@ -60,10 +75,6 @@ async function startServer() {
 
     process.once("SIGINT", shutdown);
     process.once("SIGTERM", shutdown);
-
-    updateStartupState({ phase: "running_migrations" });
-    await db.migrate.latest();
-    console.log("Database migrations up to date");
 
     if (shouldRunInlineBackgroundWorker()) {
       backgroundWorker = startBackgroundJobWorker(db);
@@ -93,6 +104,7 @@ async function startServer() {
       ready: false,
       error: error.message,
     });
+    captureException(error, { source: "startup" });
     console.error("Failed to start server:", error);
     process.exit(1);
   }

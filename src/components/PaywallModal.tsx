@@ -11,6 +11,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { experimentsApi } from "../services/api";
+import { isMonetizationEnabled } from "../utils/productionConfig";
 
 const { width, height } = Dimensions.get("window");
 
@@ -27,6 +28,9 @@ export default function PaywallModal({
   onClose,
   onSecondChance,
 }: PaywallModalProps) {
+  if (!isMonetizationEnabled()) {
+    return null;
+  }
   const paywallVariant = experimentsApi.getCurrentAssignments().paywall_v2 || "control";
   const slideUp = useRef(new Animated.Value(height)).current;
   const fadeIn = useRef(new Animated.Value(0)).current;

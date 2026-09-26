@@ -269,9 +269,9 @@ export default function RewardOverlay({
             ]}
           >
             <View style={styles.challengeCard}>
-              <Text style={styles.challengeTitle}>Challenge someone?</Text>
+              <Text style={styles.challengeTitle}>Hap nje duel?</Text>
               <Text style={styles.challengeBody}>
-                Turn this answer into a duel and send it back to the feed.
+                Sfido nje pergjigje tjeter ne te njejten pyetje. 24 ore votim.
               </Text>
 
               <View style={styles.challengeRow}>
@@ -281,13 +281,13 @@ export default function RewardOverlay({
                   disabled={challengeLoading}
                 >
                   <LinearGradient
-                    colors={["#FF3366", "#FF6B6B"]}
+                    colors={["#FF2D6A", "#8B5CFF"]}
                     style={styles.challengePrimaryGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                   >
                     <Text style={styles.challengePrimaryText}>
-                      {challengeLoading ? "Creating..." : "Yes"}
+                      {challengeLoading ? "Duke krijuar..." : "Fillo duelin"}
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -297,7 +297,7 @@ export default function RewardOverlay({
                   onPress={onViewFeed}
                   disabled={challengeLoading}
                 >
-                  <Text style={styles.challengeSecondaryText}>Skip</Text>
+                  <Text style={styles.challengeSecondaryText}>Jo tani</Text>
                 </TouchableOpacity>
               </View>
             </View>

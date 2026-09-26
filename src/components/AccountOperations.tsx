@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Alert, Linking, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { getApiErrorMessage, legalApi, paymentsApi, supportApi } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { getLegalPrivacyUrl, getLegalTermsUrl, isMonetizationEnabled } from "../utils/productionConfig";
+import { setAnalyticsConsent } from "../services/analytics";
 
 type Props = {
   isPremium?: boolean;
@@ -62,25 +64,18 @@ export default function AccountOperations({ isPremium }: Props) {
     refresh();
   }, []);
 
-  const showLegalDoc = async (kind: "terms" | "privacy") => {
+  const openLegalDoc = async (kind: "terms" | "privacy") => {
+    const url = kind === "terms" ? getLegalTermsUrl() : getLegalPrivacyUrl();
     try {
-      const response = kind === "terms" ? await legalApi.getTerms() : await legalApi.getPrivacy();
-      const sections = response.data?.sections || [];
-      const summary = sections
-        .slice(0, 3)
-        .map((section: any) => `${section.title}: ${section.content}`)
-        .join("\n\n");
-      Alert.alert(
-        kind === "terms" ? "Terms" : "Privacy Policy",
-        summary.length > 1500 ? `${summary.slice(0, 1500)}...` : summary
-      );
+      await Linking.openURL(url);
     } catch (_) {
-      Alert.alert("Unavailable", `Could not load ${kind} right now.`);
+      Alert.alert("Unavailable", `Could not open ${kind} page.`);
     }
   };
 
   const saveConsent = async (nextConsent: typeof consent) => {
     setConsent(nextConsent);
+    setAnalyticsConsent(Boolean(nextConsent.analytics));
     try {
       await legalApi.saveConsent(nextConsent);
     } catch (error) {
@@ -170,19 +165,32 @@ export default function AccountOperations({ isPremium }: Props) {
     }
   };
 
-  const requestDeletion = async () => {
-    try {
-      const response = await legalApi.requestDeleteAccount();
-      Alert.alert(
-        "Deletion scheduled",
-        response.data?.billingPortalUrl
-          ? "Deletion was scheduled. Cancel billing first from the billing portal."
-          : "Deletion was scheduled for this account."
-      );
-      await logout();
-    } catch (error) {
-      Alert.alert("Delete failed", getApiErrorMessage(error, "Could not schedule account deletion."));
-    }
+  const requestDeletion = () => {
+    Alert.alert(
+      "Delete account?",
+      "Your account will be scheduled for permanent deletion in 30 days. You can cancel during that grace period.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete my account",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const response = await legalApi.requestDeleteAccount();
+              Alert.alert(
+                "Deletion scheduled",
+                response.data?.billingPortalUrl
+                  ? "Deletion was scheduled. Cancel billing first from the billing portal."
+                  : "Deletion was scheduled for this account."
+              );
+              await logout();
+            } catch (error) {
+              Alert.alert("Delete failed", getApiErrorMessage(error, "Could not schedule account deletion."));
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -191,10 +199,10 @@ export default function AccountOperations({ isPremium }: Props) {
       <Text style={styles.sectionHint}>Privacy controls, exports, deletion, tickets, and refunds.</Text>
 
       <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.buttonGhost} onPress={() => showLegalDoc("terms")}>
+        <TouchableOpacity style={styles.buttonGhost} onPress={() => openLegalDoc("terms")}>
           <Text style={styles.buttonGhostText}>Terms</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.buttonGhost} onPress={() => showLegalDoc("privacy")}>
+        <TouchableOpacity style={styles.buttonGhost} onPress={() => openLegalDoc("privacy")}>
           <Text style={styles.buttonGhostText}>Privacy</Text>
         </TouchableOpacity>
       </View>
@@ -273,6 +281,7 @@ export default function AccountOperations({ isPremium }: Props) {
         ))}
       </View>
 
+      {isMonetizationEnabled() ? (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Refund request</Text>
         <TextInput
@@ -324,8 +333,9 @@ export default function AccountOperations({ isPremium }: Props) {
           </View>
         ))}
       </View>
+      ) : null}
 
-      {isPremium ? (
+      {isPremium && isMonetizationEnabled() ? (
         <TouchableOpacity
           style={styles.buttonGhost}
           onPress={() =>

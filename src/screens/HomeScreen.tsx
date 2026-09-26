@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Platform,
   Animated,
+  ScrollView,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
@@ -15,6 +16,7 @@ import { API_BASE_URL, questionsApi, countryApi } from "../services/api";
 import { analytics } from "../services/analytics";
 import DropBanner from "../components/DropBanner";
 import StreakBar from "../components/StreakBar";
+import LeaderboardTeaser from "../components/LeaderboardTeaser";
 import FloatingPrompt from "../components/FloatingPrompt";
 import StatePanel from "../components/StatePanel";
 import PushOptInBanner from "../components/PushOptInBanner";
@@ -141,6 +143,14 @@ export default function HomeScreen({ navigation }: any) {
       return;
     }
     navigation.navigate("Feed");
+  };
+
+  const goDuels = () => {
+    if (typeof navigation.jumpTo === "function") {
+      navigation.jumpTo("Duels");
+      return;
+    }
+    navigation.navigate("Duels");
   };
 
   // Trending pulse animation
@@ -362,7 +372,11 @@ export default function HomeScreen({ navigation }: any) {
         </View>
       ) : null}
 
-      <View style={styles.content}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.contentInner}
+        showsVerticalScrollIndicator={false}
+      >
         {loading && !question ? (
           <StatePanel variant="loading" message="Loading today's question…" />
         ) : apiOffline ? (
@@ -398,7 +412,7 @@ export default function HomeScreen({ navigation }: any) {
 
             <View style={styles.titleRow}>
               <Text style={styles.todayTitle}>
-                {questionCountryInfo.flag} Today's Question
+                {questionCountryInfo.flag} Pyetja e dites
               </Text>
               {question.country && question.country !== "GLOBAL" && (
                 <View style={styles.questionCountryTag}>
@@ -452,7 +466,7 @@ export default function HomeScreen({ navigation }: any) {
               >
                 <Ionicons name="flash" size={22} color="#FFF" />
                 <Text style={styles.answerButtonText}>
-                  {COMPACT_HOME ? "⚡ Answer Now" : isHot ? "🔥 Answer NOW" : "⚡ Answer in 5 seconds"}
+                  {COMPACT_HOME ? "⚡ Pergjigju tani" : isHot ? "🔥 Pergjigju TANI" : "⚡ Pergjigju ne 5 sekonda"}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -463,13 +477,25 @@ export default function HomeScreen({ navigation }: any) {
                 style={styles.softEntryPill}
                 onPress={() => goRecord({ question, mode: "text" })}
               >
-                <Text style={styles.softEntryPillText}>😅 Text</Text>
+                <Text style={styles.softEntryPillText}>😅 Tekst</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.softEntryPill}
                 onPress={() => goRecord({ question, mode: "audio" })}
               >
                 <Text style={styles.softEntryPillText}>🎙️ Audio</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.softEntryPill}
+                onPress={goDuels}
+              >
+                <Text style={styles.softEntryPillText}>⚔️ Duels</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.softEntryPill}
+                onPress={() => navigation.navigate("Leaderboard")}
+              >
+                <Text style={styles.softEntryPillText}>🏆 Renditja</Text>
               </TouchableOpacity>
             </View>
             ) : null}
@@ -479,9 +505,11 @@ export default function HomeScreen({ navigation }: any) {
               onPress={goFeed}
             >
               <Text style={styles.scrollCtaText}>
-                {COMPACT_HOME ? "▶ Watch answers in feed" : "⬇ Scroll to watch answers"}
+                {COMPACT_HOME ? "▶ Shiko pergjigjet ne feed" : "⬇ Shiko si u pergjigjen te tjeret"}
               </Text>
             </TouchableOpacity>
+
+            <LeaderboardTeaser />
 
             {!COMPACT_HOME && (hotQuestions.length > 0 || personalizedQuestions.length > 0 || patterns.length > 0) && (
               <View style={styles.discoverySection}>
@@ -550,7 +578,7 @@ export default function HomeScreen({ navigation }: any) {
             onSecondaryPress={fetchDaily}
           />
         )}
-      </View>
+      </ScrollView>
 
       {!COMPACT_HOME ? (
       <FloatingPrompt
@@ -601,7 +629,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  contentInner: {
     paddingHorizontal: 22,
+    paddingBottom: 32,
   },
   cachedBanner: {
     alignSelf: "center",

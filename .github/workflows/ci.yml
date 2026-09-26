@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Production env validation
+        env:
+          NODE_ENV: production
+          APP_ENV: production
+          JWT_SECRET: ci-production-secret-with-32-characters-minimum
+          DATABASE_URL: postgres://user:pass@localhost:5432/fivesek
+          CLOUDINARY_CLOUD_NAME: ci-cloud
+          CLOUDINARY_API_KEY: ci-key
+          CLOUDINARY_API_SECRET: ci-secret
+          INLINE_BACKGROUND_WORKER: "false"
+          INLINE_INJECTION_WORKER: "false"
+          INLINE_DUEL_WORKER: "false"
+        run: npm run env:check

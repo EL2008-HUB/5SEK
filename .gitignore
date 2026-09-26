@@ -44,3 +44,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# database backups
+backups/
+
+# database backups
+backups/

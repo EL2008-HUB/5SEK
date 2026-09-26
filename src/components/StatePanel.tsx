@@ -35,7 +35,7 @@ export default function StatePanel({
   if (variant === "loading") {
     return (
       <View style={wrapStyle}>
-        <ActivityIndicator size="large" color="#FF3366" />
+        <ActivityIndicator size="large" color="#FF2D6A" />
         {message ? <Text style={styles.loadingText}>{message}</Text> : null}
       </View>
     );
@@ -59,7 +59,7 @@ export default function StatePanel({
       {primaryLabel && onPrimaryPress ? (
         <TouchableOpacity onPress={onPrimaryPress} activeOpacity={0.9} style={styles.primaryWrap}>
           <LinearGradient
-            colors={variant === "error" ? ["#FF5A7A", "#FF3366"] : ["#6EEDC1", "#48D9B5"]}
+            colors={variant === "error" ? ["#FF5A7A", "#FF2D6A"] : ["#3DFFC8", "#2EE0B8"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.primaryBtn}

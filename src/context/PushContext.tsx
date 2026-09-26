@@ -6,6 +6,7 @@ import { Linking, Platform } from "react-native";
 import { useAuth } from "./AuthContext";
 import { analytics } from "../services/analytics";
 import { pushApi } from "../services/api";
+import { storage } from "../services/storage";
 import { captureException, captureMessage } from "../services/observability";
 import {
   cancelDailyQuestionReminder,
@@ -67,6 +68,7 @@ async function registerTokenWithBackend(token: string) {
     project_id: projectId,
     app_version: Constants.expoConfig?.version || "unknown",
   });
+  await storage.setItem("@5sek_expo_push_token", token);
 }
 
 export function PushProvider({ children }: { children: React.ReactNode }) {

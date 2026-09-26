@@ -1,7 +1,7 @@
 const { bootstrapEnv } = require("../src/config/bootstrapEnv");
 bootstrapEnv(require("path").join(__dirname, ".."));
 
-const target = process.env.SMOKE_HEALTHCHECK_URL || "http://127.0.0.1:3000/health";
+const target = process.env.SMOKE_HEALTHCHECK_URL || "http://127.0.0.1:3000/ready";
 
 fetch(target)
   .then((response) => {

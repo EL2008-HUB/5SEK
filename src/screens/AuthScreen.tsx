@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+﻿import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,49 +12,50 @@ import {
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useConnectivity } from "../context/ConnectivityContext";
 import { getApiErrorMessage } from "../services/api";
+import { getLegalPrivacyUrl, getLegalTermsUrl } from "../utils/productionConfig";
+import { Colors, Shadows } from "../theme";
 
-const COUNTRY_PRESETS = ["GLOBAL", "AL", "US", "DE"];
-
-function compactEndpointLabel(endpoint: string) {
-  return endpoint.replace(/^https?:\/\//, "");
-}
+const COUNTRY_PRESETS = [
+  { code: "AL", label: "Shqiperi" },
+  { code: "XK", label: "Kosove" },
+  { code: "US", label: "USA" },
+  { code: "DE", label: "Germany" },
+  { code: "GLOBAL", label: "Global" },
+];
 
 export default function AuthScreen() {
-  const { login, register } = useAuth();
-  const { status, endpoint, refresh } = useConnectivity();
+  const { login, register, loginAsGuest } = useAuth();
+  const { status, refresh } = useConnectivity();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [country, setCountry] = useState("GLOBAL");
+  const [country, setCountry] = useState("AL");
   const [submitting, setSubmitting] = useState(false);
+  const [guestSubmitting, setGuestSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const submitLabel = mode === "login" ? "Enter feed" : "Create account";
-  const modeHeadline =
-    mode === "login" ? "Welcome back." : "Create a real identity.";
-  const modeHelper =
-    mode === "login"
-      ? "Login with the account tied to moderation, refunds, exports, and admin actions."
-      : "Register once, then every answer, duel, and support flow stays attached to the same account.";
-  const endpointLabel = compactEndpointLabel(endpoint);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [confirmedAge, setConfirmedAge] = useState(false);
 
   const canSubmit = useMemo(() => {
-    if (!email.trim() || !password) return false;
-    if (mode === "register" && (!username.trim() || !country.trim())) return false;
+    if (!password) return false;
+    if (mode === "login") return Boolean(email.trim());
+    if (password.length < 8) return false;
+    if (!username.trim() || username.trim().length < 3) return false;
+    if (!email.trim() || !email.includes("@")) return false;
+    if (!acceptedTerms || !confirmedAge) return false;
     return true;
-  }, [country, email, mode, password, username]);
+  }, [acceptedTerms, confirmedAge, email, mode, password, username]);
 
   const submit = async () => {
     if (!canSubmit) return;
-
     setSubmitting(true);
     setError(null);
-
     try {
       if (mode === "login") {
         await login(email.trim(), password);
@@ -68,183 +70,123 @@ export default function AuthScreen() {
     } catch (submitError: any) {
       const fallback =
         status === "degraded"
-          ? "API unavailable. Start the backend and retry."
-          : "Authentication failed.";
+          ? "Nuk lidhemi me serverin. Provo perseri."
+          : mode === "login"
+          ? "Email/username ose fjalekalimi nuk perputhen."
+          : "Nuk u krijua llogaria. Provo perseri.";
       setError(getApiErrorMessage(submitError, fallback));
     } finally {
       setSubmitting(false);
     }
   };
 
-  return (
-    <LinearGradient colors={["#081017", "#101A24", "#1E2B32"]} style={styles.container}>
-      <View style={styles.bgOrbA} />
-      <View style={styles.bgOrbB} />
+  const continueAsGuest = async () => {
+    if (guestSubmitting || submitting) return;
+    setGuestSubmitting(true);
+    setError(null);
+    try {
+      await loginAsGuest(country || "GLOBAL");
+    } catch (guestError: any) {
+      const code = guestError?.response?.data?.error;
+      const fallback =
+        status === "degraded"
+          ? "Nuk lidhemi me serverin. Provo perseri."
+          : code === "guest_rate_limited"
+          ? "Shume hyrje si vizitor nga kjo lidhje. Provo pas pak ose krijo llogari."
+          : "Nuk u hap sesioni si vizitor. Provo perseri.";
+      setError(getApiErrorMessage(guestError, fallback));
+    } finally {
+      setGuestSubmitting(false);
+    }
+  };
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flex}
-      >
+  return (
+    <LinearGradient colors={Colors.background.authGradient} style={styles.container}>
+      <View style={styles.orbA} />
+      <View style={styles.orbB} />
+
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
         <ScrollView
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.hero}>
-            <View style={styles.brandRow}>
-              <Text style={styles.eyebrow}>5SEK</Text>
-              <View
-                style={[
-                  styles.statusPill,
-                  status === "online" ? styles.statusPillOnline : styles.statusPillOffline,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.statusDot,
-                    status === "online" ? styles.statusDotOnline : styles.statusDotOffline,
-                  ]}
-                />
-                <Text style={styles.statusText}>
-                  {status === "online" ? "API reachable" : "API offline"}
-                </Text>
-              </View>
-            </View>
-
-            <Text style={styles.title}>Real accounts. Fast entry. Clear state.</Text>
-            <Text style={styles.subtitle}>
-              Auth should feel clean, not heavy. This flow keeps identity explicit while showing what
-              the app is connected to right now.
-            </Text>
-
-            <View style={styles.heroGrid}>
-              <View style={styles.heroTile}>
-                <Text style={styles.heroTileValue}>01</Text>
-                <Text style={styles.heroTileLabel}>Real auth only</Text>
-              </View>
-              <View style={styles.heroTile}>
-                <Text style={styles.heroTileValue}>24h</Text>
-                <Text style={styles.heroTileLabel}>Export + support traces</Text>
-              </View>
-              <View style={styles.heroTileWide}>
-                <Text style={styles.heroTileCaption}>Active endpoint</Text>
-                <Text style={styles.heroTileEndpoint}>{endpointLabel}</Text>
-                {status === "degraded" ? (
-                  <TouchableOpacity style={styles.endpointButton} onPress={refresh} activeOpacity={0.9}>
-                    <Text style={styles.endpointButtonText}>Retry API check</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
+          <View style={styles.brand}>
+            <LinearGradient colors={Colors.accent.primaryGradient} style={styles.logoMark}>
+              <Text style={styles.logoMarkText}>5</Text>
+            </LinearGradient>
+            <Text style={styles.logo}>5SEK</Text>
+            <Text style={styles.tagline}>5 sekonda. Nje pergjigje. Go live.</Text>
           </View>
 
           <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.cardTitle}>{modeHeadline}</Text>
-                <Text style={styles.cardSubtitle}>{modeHelper}</Text>
-              </View>
-            </View>
-
-            <View style={styles.modeShell}>
-              <LinearGradient
-                colors={mode === "login" ? ["#9AE3C6", "#73D9D0"] : ["#FFC96E", "#F29B55"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.modeActiveBg, mode === "register" && styles.modeActiveBgRight]}
-              />
-              <TouchableOpacity
-                style={styles.modeButton}
-                onPress={() => setMode("login")}
-                activeOpacity={0.9}
-              >
-                <Text style={[styles.modeText, mode === "login" && styles.modeTextActive]}>Login</Text>
+            <View style={styles.tabs}>
+              <TouchableOpacity style={[styles.tab, mode === "login" && styles.tabActive]} onPress={() => setMode("login")}>
+                <Text style={[styles.tabText, mode === "login" && styles.tabTextActive]}>Hyr</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.modeButton}
-                onPress={() => setMode("register")}
-                activeOpacity={0.9}
-              >
-                <Text style={[styles.modeText, mode === "register" && styles.modeTextActive]}>
-                  Register
-                </Text>
+              <TouchableOpacity style={[styles.tab, mode === "register" && styles.tabActive]} onPress={() => setMode("register")}>
+                <Text style={[styles.tabText, mode === "register" && styles.tabTextActive]}>Krijo llogari</Text>
               </TouchableOpacity>
             </View>
 
             {mode === "register" ? (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Username</Text>
+              <View style={styles.field}>
+                <Text style={styles.label}>Username</Text>
                 <TextInput
                   value={username}
                   onChangeText={setUsername}
-                  placeholder="your handle"
-                  placeholderTextColor="rgba(225,236,245,0.34)"
+                  placeholder="p.sh. elisa"
+                  placeholderTextColor="rgba(255,255,255,0.32)"
                   autoCapitalize="none"
+                  autoCorrect={false}
                   style={styles.input}
                 />
               </View>
             ) : null}
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Email</Text>
+            <View style={styles.field}>
+              <Text style={styles.label}>{mode === "login" ? "Email ose username" : "Email"}</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
-                placeholder="name@example.com"
-                placeholderTextColor="rgba(225,236,245,0.34)"
+                placeholder={mode === "login" ? "emri@email.com ose username" : "emri@email.com"}
+                placeholderTextColor="rgba(255,255,255,0.32)"
                 autoCapitalize="none"
-                keyboardType="email-address"
+                autoCorrect={false}
+                keyboardType={mode === "login" ? "default" : "email-address"}
                 style={styles.input}
               />
             </View>
 
-            <View style={styles.inputGroup}>
-              <View style={styles.passwordRow}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <TouchableOpacity onPress={() => setShowPassword((prev) => !prev)} activeOpacity={0.8}>
-                  <Text style={styles.passwordToggle}>{showPassword ? "Hide" : "Show"}</Text>
+            <View style={styles.field}>
+              <Text style={styles.label}>Fjalekalimi</Text>
+              <View style={styles.passwordWrap}>
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Minimumi 8 karaktere"
+                  placeholderTextColor="rgba(255,255,255,0.32)"
+                  secureTextEntry={!showPassword}
+                  style={[styles.input, styles.passwordInput]}
+                />
+                <TouchableOpacity onPress={() => setShowPassword((v) => !v)} style={styles.eyeBtn}>
+                  <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color="rgba(255,255,255,0.6)" />
                 </TouchableOpacity>
               </View>
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder={mode === "login" ? "Enter password" : "At least 8 characters"}
-                placeholderTextColor="rgba(225,236,245,0.34)"
-                secureTextEntry={!showPassword}
-                style={styles.input}
-              />
             </View>
 
             {mode === "register" ? (
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Market</Text>
-                <TextInput
-                  value={country}
-                  onChangeText={(value) => setCountry(value.toUpperCase())}
-                  placeholder="Country code"
-                  placeholderTextColor="rgba(225,236,245,0.34)"
-                  autoCapitalize="characters"
-                  maxLength={10}
-                  style={styles.input}
-                />
-                <View style={styles.countryPresetRow}>
+              <View style={styles.field}>
+                <Text style={styles.label}>Shteti</Text>
+                <View style={styles.chips}>
                   {COUNTRY_PRESETS.map((preset) => (
                     <TouchableOpacity
-                      key={preset}
-                      style={[
-                        styles.countryChip,
-                        country.trim().toUpperCase() === preset && styles.countryChipActive,
-                      ]}
-                      onPress={() => setCountry(preset)}
-                      activeOpacity={0.85}
+                      key={preset.code}
+                      style={[styles.chip, country === preset.code && styles.chipActive]}
+                      onPress={() => setCountry(preset.code)}
                     >
-                      <Text
-                        style={[
-                          styles.countryChipText,
-                          country.trim().toUpperCase() === preset && styles.countryChipTextActive,
-                        ]}
-                      >
-                        {preset}
+                      <Text style={[styles.chipText, country === preset.code && styles.chipTextActive]}>
+                        {preset.label}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -252,37 +194,98 @@ export default function AuthScreen() {
               </View>
             ) : null}
 
-            {status === "degraded" ? (
-              <View style={styles.offlineCard}>
-                <Text style={styles.offlineTitle}>Backend not reachable</Text>
-                <Text style={styles.offlineBody}>
-                  Current target is `{endpointLabel}`. Start `5second-api` or point Expo to the right API URL,
-                  then retry.
-                </Text>
+            {mode === "register" ? (
+              <View style={styles.legalBlock}>
+                <TouchableOpacity style={styles.checkRow} onPress={() => setAcceptedTerms((v) => !v)}>
+                  <View style={[styles.checkbox, acceptedTerms && styles.checkboxOn]}>
+                    {acceptedTerms ? <Ionicons name="checkmark" size={12} color="#050508" /> : null}
+                  </View>
+                  <Text style={styles.checkLabel}>
+                    Pranoj{" "}
+                    <Text style={styles.link} onPress={() => Linking.openURL(getLegalTermsUrl())}>kushtet</Text>
+                    {" "}dhe{" "}
+                    <Text style={styles.link} onPress={() => Linking.openURL(getLegalPrivacyUrl())}>privatesine</Text>.
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.checkRow} onPress={() => setConfirmedAge((v) => !v)}>
+                  <View style={[styles.checkbox, confirmedAge && styles.checkboxOn]}>
+                    {confirmedAge ? <Ionicons name="checkmark" size={12} color="#050508" /> : null}
+                  </View>
+                  <Text style={styles.checkLabel}>Kam te pakten 16 vjec.</Text>
+                </TouchableOpacity>
               </View>
             ) : null}
 
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {status === "degraded" ? (
+              <TouchableOpacity style={styles.offline} onPress={refresh}>
+                <Text style={styles.offlineText}>Nuk ka lidhje me API. Trokit per te riprovuar.</Text>
+              </TouchableOpacity>
+            ) : null}
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <TouchableOpacity
-              style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
+              style={[styles.submitWrap, !canSubmit && styles.submitDisabled]}
               onPress={submit}
               disabled={submitting || !canSubmit}
-              activeOpacity={0.92}
+              activeOpacity={0.9}
             >
               <LinearGradient
-                colors={!canSubmit ? ["#2A333D", "#2A333D"] : ["#9AE3C6", "#73D9D0"]}
+                colors={!canSubmit ? ["#2A2A36", "#2A2A36"] : Colors.accent.primaryGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={styles.submitGradient}
+                style={styles.submit}
               >
                 {submitting ? (
-                  <ActivityIndicator color="#081117" />
+                  <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={styles.submitText}>{submitLabel}</Text>
+                  <Text style={styles.submitText}>{mode === "login" ? "Hyr ne 5SEK" : "Fillo tani"}</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>ose</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.guestButton, (guestSubmitting || submitting) && styles.submitDisabled]}
+              onPress={continueAsGuest}
+              disabled={guestSubmitting || submitting}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Vazhdo si vizitor"
+            >
+              {guestSubmitting ? (
+                <ActivityIndicator color="#3DFFC8" />
+              ) : (
+                <>
+                  <Ionicons name="flash-outline" size={18} color="#3DFFC8" />
+                  <Text style={styles.guestButtonText}>Vazhdo si vizitor</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <Text style={styles.guestHint}>
+              Pa email, pa fjalekalim. Pergjigju, voto dhe bej duel menjehere - llogarine e krijon kur te duash,
+              pa humbur asgje.
+            </Text>
+          </View>
+
+          <View style={styles.perksRow}>
+            <View style={styles.perk}>
+              <Text style={styles.perkEmoji}>⚡</Text>
+              <Text style={styles.perkText}>5 sekonda per pergjigje</Text>
+            </View>
+            <View style={styles.perk}>
+              <Text style={styles.perkEmoji}>⚔️</Text>
+              <Text style={styles.perkText}>Duele 1v1 live</Text>
+            </View>
+            <View style={styles.perk}>
+              <Text style={styles.perkEmoji}>🏆</Text>
+              <Text style={styles.perkText}>Renditja javore</Text>
+            </View>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -291,331 +294,152 @@ export default function AuthScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  flex: {
-    flex: 1,
-  },
-  bgOrbA: {
+  container: { flex: 1 },
+  flex: { flex: 1 },
+  orbA: {
     position: "absolute",
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    backgroundColor: "rgba(255,45,106,0.28)",
     top: -80,
-    right: -40,
-    width: 260,
-    height: 260,
-    borderRadius: 130,
-    backgroundColor: "rgba(115,217,208,0.1)",
+    right: -60,
   },
-  bgOrbB: {
+  orbB: {
     position: "absolute",
-    bottom: -120,
-    left: -50,
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "rgba(255,201,110,0.08)",
+    width: 240,
+    height: 240,
+    borderRadius: 120,
+    backgroundColor: "rgba(139,92,255,0.22)",
+    bottom: 40,
+    left: -80,
   },
   content: {
-    flexGrow: 1,
+    paddingHorizontal: 22,
+    paddingTop: 72,
+    paddingBottom: 40,
+  },
+  brand: { alignItems: "center", marginBottom: 28 },
+  logoMark: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 20,
-    paddingTop: 110,
-    paddingBottom: 36,
-    gap: 24,
+    marginBottom: 12,
+    ...Shadows.glowPrimary,
   },
-  hero: {
-    gap: 16,
-    maxWidth: 860,
-    width: "100%",
-    alignSelf: "center",
-  },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  eyebrow: {
-    color: "#93F2D0",
-    fontSize: 14,
-    fontWeight: "900",
-    letterSpacing: 3,
-  },
-  statusPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderWidth: 1,
-  },
-  statusPillOnline: {
-    backgroundColor: "rgba(154,227,198,0.12)",
-    borderColor: "rgba(154,227,198,0.22)",
-  },
-  statusPillOffline: {
-    backgroundColor: "rgba(255,184,117,0.12)",
-    borderColor: "rgba(255,184,117,0.2)",
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusDotOnline: {
-    backgroundColor: "#9AE3C6",
-  },
-  statusDotOffline: {
-    backgroundColor: "#FFB875",
-  },
-  statusText: {
-    color: "#F7FBFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  title: {
-    color: "#FFFFFF",
-    fontSize: 42,
-    lineHeight: 46,
-    fontWeight: "900",
-    maxWidth: 720,
-  },
-  subtitle: {
-    color: "rgba(229,240,248,0.78)",
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: "600",
-    maxWidth: 760,
-  },
-  heroGrid: {
-    flexDirection: "row",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  heroTile: {
-    minWidth: 146,
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    gap: 4,
-  },
-  heroTileWide: {
-    flexGrow: 1,
-    minWidth: 230,
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    backgroundColor: "rgba(10,17,25,0.72)",
-    borderWidth: 1,
-    borderColor: "rgba(115,217,208,0.14)",
-    gap: 8,
-  },
-  heroTileValue: {
-    color: "#FFFFFF",
-    fontSize: 26,
-    fontWeight: "900",
-  },
-  heroTileLabel: {
-    color: "rgba(229,240,248,0.72)",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  heroTileCaption: {
-    color: "rgba(229,240,248,0.56)",
-    fontSize: 11,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 1.3,
-  },
-  heroTileEndpoint: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  endpointButton: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: "rgba(255,201,110,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(255,201,110,0.18)",
-  },
-  endpointButtonText: {
-    color: "#FFE0A8",
-    fontSize: 12,
-    fontWeight: "900",
-  },
+  logoMarkText: { color: "#FFF", fontSize: 32, fontWeight: "900" },
+  logo: { color: "#FFF", fontSize: 42, fontWeight: "900", letterSpacing: 2 },
+  tagline: { color: "rgba(255,255,255,0.62)", marginTop: 8, fontSize: 15, fontWeight: "600" },
   card: {
-    width: "100%",
-    maxWidth: 860,
-    alignSelf: "center",
-    borderRadius: 30,
-    padding: 22,
-    gap: 16,
-    backgroundColor: "rgba(6,11,18,0.84)",
+    backgroundColor: "rgba(12,12,20,0.82)",
+    borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    shadowColor: "#000",
-    shadowOpacity: 0.26,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 18 },
-    elevation: 10,
+    borderColor: "rgba(255,255,255,0.1)",
+    padding: 20,
   },
-  cardHeader: {
-    gap: 6,
-  },
-  cardTitle: {
-    color: "#FFFFFF",
-    fontSize: 24,
-    fontWeight: "900",
-  },
-  cardSubtitle: {
-    color: "rgba(229,240,248,0.68)",
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: "600",
-  },
-  modeShell: {
-    position: "relative",
+  tabs: {
     flexDirection: "row",
-    padding: 6,
-    borderRadius: 999,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.06)",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 20,
   },
-  modeActiveBg: {
-    position: "absolute",
-    top: 6,
-    bottom: 6,
-    left: 6,
-    width: "50%",
-    borderRadius: 999,
-  },
-  modeActiveBgRight: {
-    left: "50%",
-  },
-  modeButton: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: "center",
-    zIndex: 1,
-  },
-  modeText: {
-    color: "rgba(229,240,248,0.68)",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  modeTextActive: {
-    color: "#071117",
-  },
-  inputGroup: {
-    gap: 8,
-  },
-  inputLabel: {
-    color: "rgba(229,240,248,0.72)",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 12 },
+  tabActive: { backgroundColor: "#FF2D6A" },
+  tabText: { color: "rgba(255,255,255,0.55)", fontWeight: "800" },
+  tabTextActive: { color: "#FFF" },
+  field: { marginBottom: 14 },
+  label: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: "800", marginBottom: 8, letterSpacing: 0.4 },
   input: {
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
     backgroundColor: "rgba(255,255,255,0.06)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-    color: "#FFFFFF",
+    borderColor: "rgba(255,255,255,0.1)",
+    borderRadius: 16,
+    color: "#FFF",
+    paddingHorizontal: 14,
+    paddingVertical: 14,
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "600",
   },
-  passwordRow: {
+  passwordWrap: { position: "relative" },
+  passwordInput: { paddingRight: 46 },
+  eyeBtn: { position: "absolute", right: 14, top: 14 },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  chipActive: { backgroundColor: "rgba(255,45,106,0.2)", borderColor: "#FF2D6A" },
+  chipText: { color: "rgba(255,255,255,0.65)", fontWeight: "700", fontSize: 12 },
+  chipTextActive: { color: "#FFF" },
+  legalBlock: { gap: 10, marginBottom: 12 },
+  checkRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.35)",
+    marginTop: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkboxOn: { backgroundColor: "#3DFFC8", borderColor: "#3DFFC8" },
+  checkLabel: { flex: 1, color: "rgba(255,255,255,0.75)", fontSize: 13, lineHeight: 18, fontWeight: "600" },
+  link: { color: "#3DFFC8", textDecorationLine: "underline" },
+  offline: {
+    backgroundColor: "rgba(255,200,87,0.12)",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+  },
+  offlineText: { color: "#FFC857", fontWeight: "700", fontSize: 12, textAlign: "center" },
+  error: { color: "#FF6B8A", fontWeight: "700", marginBottom: 10, textAlign: "center" },
+  submitWrap: { marginTop: 6, borderRadius: 18, overflow: "hidden" },
+  submitDisabled: { opacity: 0.55 },
+  submit: { paddingVertical: 16, alignItems: "center" },
+  submitText: { color: "#FFF", fontSize: 17, fontWeight: "900" },
+  dividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "rgba(255,255,255,0.1)" },
+  dividerText: { color: "rgba(255,255,255,0.45)", fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  guestButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-  },
-  passwordToggle: {
-    color: "#93F2D0",
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  countryPresetRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+    justifyContent: "center",
     gap: 8,
+    paddingVertical: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "rgba(61,255,200,0.55)",
+    backgroundColor: "rgba(61,255,200,0.08)",
   },
-  countryChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 999,
+  guestButtonText: { color: "#3DFFC8", fontSize: 16, fontWeight: "900" },
+  guestHint: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "600",
+    textAlign: "center",
+    marginTop: 10,
+  },
+  perksRow: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginTop: 22 },
+  perk: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 16,
     backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
   },
-  countryChipActive: {
-    backgroundColor: "rgba(154,227,198,0.15)",
-    borderColor: "rgba(154,227,198,0.22)",
-  },
-  countryChipText: {
-    color: "rgba(229,240,248,0.7)",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  countryChipTextActive: {
-    color: "#D8FFF1",
-  },
-  offlineCard: {
-    borderRadius: 18,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: "rgba(91,34,6,0.32)",
-    borderWidth: 1,
-    borderColor: "rgba(255,184,117,0.18)",
-    gap: 6,
-  },
-  offlineTitle: {
-    color: "#FFE2BF",
-    fontSize: 14,
-    fontWeight: "900",
-  },
-  offlineBody: {
-    color: "rgba(255,235,209,0.82)",
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: "700",
-  },
-  errorText: {
-    color: "#FFB2B8",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  submitButton: {
-    borderRadius: 20,
-    overflow: "hidden",
-    marginTop: 4,
-  },
-  submitButtonDisabled: {
-    opacity: 0.55,
-  },
-  submitGradient: {
-    minHeight: 62,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  submitText: {
-    color: "#081117",
-    fontSize: 17,
-    fontWeight: "900",
-    letterSpacing: 0.3,
-  },
+  perkEmoji: { fontSize: 20 },
+  perkText: { color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "700", textAlign: "center" },
 });

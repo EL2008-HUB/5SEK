@@ -32,6 +32,8 @@ exports.trackClientEvent = async (req, res) => {
     }
 
     const sessionId = typeof metadata?.session_id === "string" ? metadata.session_id : null;
+    // KPI side effects are best-effort: they must never fail the event ingest.
+    try {
     if (req.userId && sessionId) {
       if (event_type === "app_open" || event_type === "app_resume") {
         await kpiService.startSession(req.db, req.userId, sessionId, req.userCountry || req.detectedCountry || "GLOBAL");
@@ -64,6 +66,9 @@ exports.trackClientEvent = async (req, res) => {
           answersCreated: 1,
         });
       }
+    }
+    } catch (kpiError) {
+      console.warn("KPI side effect skipped:", kpiError.message);
     }
 
     res.json({ ok: true });

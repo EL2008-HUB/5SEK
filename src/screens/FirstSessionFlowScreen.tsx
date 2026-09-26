@@ -74,15 +74,15 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
         <>
           <Text style={styles.kicker}>How it works</Text>
           <View style={styles.previewCard}>
-            <Ionicons name="flash" size={36} color="#6EEDC1" />
-            <Text style={styles.previewTitle}>Record → Post → React</Text>
+            <Ionicons name="flash" size={36} color="#3DFFC8" />
+            <Text style={styles.previewTitle}>Regjistro → Posto → Voto</Text>
             <Text style={styles.previewBody}>
-              Scroll a feed of 5-second answers. Remix others. Keep a streak going.
+              Feed 5-sekondash, remix, komente dhe duels 1v1.
             </Text>
           </View>
           <View style={styles.bulletRow}>
             <Text style={styles.bullet}>• Local + global feeds</Text>
-            <Text style={styles.bullet}>• Remix chains & comments</Text>
+            <Text style={styles.bullet}>• Remix, komente dhe duels</Text>
             <Text style={styles.bullet}>• Guest mode — upgrade anytime</Text>
           </View>
         </>
@@ -91,7 +91,7 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
 
     return (
       <>
-        <Ionicons name="videocam" size={48} color="#FF3366" />
+        <Ionicons name="videocam" size={48} color="#FF2D6A" />
         <Text style={[styles.headline, { maxWidth: headlineMax }]}>Ready when you are</Text>
         <Text style={styles.body}>
           Your first answer unlocks the real loop. Hit record, speak for 5 seconds, and you are live
@@ -104,7 +104,7 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
   const primaryLabel = step === 2 ? "Record my first answer" : "Continue";
 
   return (
-    <LinearGradient colors={["#060D14", "#0B161E", "#101E28"]} style={styles.container}>
+    <LinearGradient colors={["#050508", "#1A0B24", "#0A1220"]} style={styles.container}>
       <Animated.View style={[styles.inner, { opacity: fade }]}>
         <View style={styles.dots}>
           {[0, 1, 2].map((i) => (
@@ -120,7 +120,7 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
           style={styles.ctaWrap}
         >
           <LinearGradient
-            colors={["#6EEDC1", "#48D9B5", "#30C9A8"]}
+            colors={["#FF2D6A", "#8B5CFF"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.cta}
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   },
   dotActive: {
     width: 24,
-    backgroundColor: "#6EEDC1",
+    backgroundColor: "#FF2D6A",
   },
   content: {
     flex: 1,
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     gap: 10,
     backgroundColor: "rgba(255,255,255,0.05)",
     borderWidth: 1,
-    borderColor: "rgba(110,237,193,0.2)",
+    borderColor: "rgba(255,45,106,0.28)",
   },
   previewTitle: {
     color: "#FFFFFF",
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   ctaText: {
-    color: "#071117",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "900",
   },

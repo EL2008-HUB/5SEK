@@ -11,12 +11,12 @@ const kpiService = {
     // Get user's first session
     const user = await db('users')
       .where('id', userId)
-      .select('created_at', 'first_session_at')
+      .select('created_at')
       .first();
 
     if (!user) return;
 
-    const firstSeen = new Date(user.first_session_at || user.created_at);
+    const firstSeen = new Date(user.created_at);
     firstSeen.setHours(0, 0, 0, 0);
 
     const daysDiff = Math.floor((today - firstSeen) / (1000 * 60 * 60 * 24));

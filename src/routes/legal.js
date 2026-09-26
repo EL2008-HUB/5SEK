@@ -17,6 +17,7 @@ const {
   processExportRequest,
 } = require('../services/exportService');
 const { queueBackgroundJob, getBackgroundJob, JOB_TYPES } = require('../services/backgroundJobService');
+const { termsDocument, privacyDocument } = require('../services/legalContent');
 
 function serializeExportRequest(request) {
   if (!request) {
@@ -39,107 +40,12 @@ function serializeExportRequest(request) {
 
 // Terms of Service
 router.get('/terms', (req, res) => {
-  const terms = {
-    version: '1.0.0',
-    lastUpdated: '2026-04-21',
-    sections: [
-      {
-        title: 'Acceptance of Terms',
-        content: 'By accessing or using 5SEK, you agree to be bound by these Terms of Service. If you disagree with any part of the terms, you may not access the service.'
-      },
-      {
-        title: 'Description of Service',
-        content: '5SEK is a social video platform where users create and share 5-second video answers to daily questions.'
-      },
-      {
-        title: 'User Accounts',
-        content: 'You must be at least 13 years old to use 5SEK. You are responsible for maintaining the security of your account and for all activities that occur under your account.'
-      },
-      {
-        title: 'Content Guidelines',
-        content: 'You retain ownership of content you post. By posting, you grant 5SEK a license to use, modify, and display your content. Content must not violate laws, infringe rights, or contain hate speech, violence, or adult content.'
-      },
-      {
-        title: 'Prohibited Activities',
-        content: 'Users may not: spam, harass others, impersonate, distribute malware, scrape data, or circumvent security measures.'
-      },
-      {
-        title: 'Termination',
-        content: 'We may terminate or suspend your account immediately for any violation of these terms.'
-      },
-      {
-        title: 'Disclaimer',
-        content: '5SEK is provided "as is" without warranties of any kind.'
-      },
-      {
-        title: 'Limitation of Liability',
-        content: '5SEK shall not be liable for any indirect, incidental, or consequential damages.'
-      },
-      {
-        title: 'Changes to Terms',
-        content: 'We reserve the right to modify these terms at any time. Continued use constitutes acceptance of changes.'
-      },
-      {
-        title: 'Contact',
-        content: 'For questions about these Terms, contact support@5sek.app'
-      }
-    ]
-  };
-
-  res.json(terms);
+  res.json(termsDocument);
 });
 
 // Privacy Policy
 router.get('/privacy', (req, res) => {
-  const privacy = {
-    version: '1.0.0',
-    lastUpdated: '2026-04-21',
-    sections: [
-      {
-        title: 'Information We Collect',
-        content: 'We collect: account info (username, email), profile data (age group, interests), content (videos, answers), usage data (views, interactions), device info, and location (country).'
-      },
-      {
-        title: 'How We Use Information',
-        content: 'We use data to: provide and improve the service, personalize content, ensure safety, process payments, send notifications, and comply with legal obligations.'
-      },
-      {
-        title: 'Data Sharing',
-        content: 'We share data with: service providers (hosting, analytics), payment processors, and legal authorities when required. We do not sell personal data.'
-      },
-      {
-        title: 'Data Retention',
-        content: 'We retain data as long as your account is active. Deleted content may remain in backups for up to 30 days. Analytics data is anonymized after 1 year.'
-      },
-      {
-        title: 'Your Rights',
-        content: 'You have the right to: access your data, correct inaccuracies, delete your account, export your data, and object to processing.'
-      },
-      {
-        title: 'Cookies and Tracking',
-        content: 'We use cookies and similar technologies for authentication, analytics, and personalization.'
-      },
-      {
-        title: 'Security',
-        content: 'We implement industry-standard security measures including encryption, access controls, and regular security audits.'
-      },
-      {
-        title: 'Children\'s Privacy',
-        content: 'We do not knowingly collect data from children under 13. If you believe we have, contact us immediately.'
-      },
-      {
-        title: 'International Transfers',
-        content: 'Data may be processed in countries outside your residence. We ensure appropriate safeguards are in place.'
-      },
-      {
-        title: 'Changes to Privacy Policy',
-        content: 'We may update this policy periodically. Significant changes will be notified via email or app notification.'
-      }
-    ],
-    contact: 'privacy@5sek.app'
-  };
-
-  res.json(privacy);
+  res.json(privacyDocument);
 });
 
 // Cookie Policy

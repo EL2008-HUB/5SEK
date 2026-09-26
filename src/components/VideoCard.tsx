@@ -17,8 +17,11 @@ import ShareOverlay from "./ShareOverlay";
 import RemixChainView from "./RemixChainView";
 import ChaosMeter, { ChaosThreadMeta } from "./ChaosMeter";
 import CommentSheet from "./CommentSheet";
-import { answersApi, moderationApi } from "../services/api";
+import { answersApi, duelsApi, moderationApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
+import { isFeatureEnabled } from "../services/featureFlags";
+import { showAppAlert } from "../utils/alerts";
+import { useAuth } from "../context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 
 // Safe haptics import (may not be installed)
@@ -42,6 +45,7 @@ interface VideoCardProps {
     response_time?: number | null;
     created_at: string;
     likes?: number;
+    liked_by_me?: boolean;
     hook_label?: string;
     social_label?: string;
     is_trending?: boolean;
@@ -65,18 +69,24 @@ interface VideoCardProps {
   /** Mount native video player only for nearby cells (perf). */
   mountMedia?: boolean;
   position?: number; // FIX 2: feed position for analytics
+  /** Visible height of the card (feed viewport minus tab bar). Defaults to window height. */
+  cardHeight?: number;
 }
 
-export function VideoCard({ video, isVisible, mountMedia = true, position }: VideoCardProps) {
+export function VideoCard({ video, isVisible, mountMedia = true, position, cardHeight }: VideoCardProps) {
   const videoRef = useRef<Video>(null);
   const navigation = useNavigation<any>();
+  const { user } = useAuth();
+  const resolvedHeight = cardHeight && cardHeight > 0 ? cardHeight : height;
+  const [challenging, setChallenging] = useState(false);
   const isTextAnswer = video.answer_type === "text" || video.answer_type === "reaction";
   const isAudioAnswer = video.answer_type === "audio";
   const shouldMountMedia = mountMedia && !isTextAnswer;
   const [isPlaying, setIsPlaying] = useState(false);
   const [showShareOverlay, setShowShareOverlay] = useState(false);
-  const [liked, setLiked] = useState(false);
+  const [liked, setLiked] = useState(Boolean(video.liked_by_me));
   const [likeCount, setLikeCount] = useState(video.likes || 0);
+  const likeInFlightRef = useRef(false);
   const [remixCount, setRemixCount] = useState(0);
   const [chaosThread, setChaosThread] = useState<ChaosThreadMeta | null>(
     video.chaos_thread || null
@@ -260,11 +270,48 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
 
   React.useEffect(() => {
     setLikeCount(video.likes || 0);
-    setLiked(false);
+    setLiked(Boolean(video.liked_by_me));
     setShowRemixPrompt(false);
     setShowChainModal(false);
     remixPromptShownRef.current = false;
-  }, [video.id, video.likes]);
+  }, [video.id, video.likes, video.liked_by_me]);
+
+  // Like = the feed's vote. Optimistic toggle, reconciled with the server's authoritative state.
+  const toggleLike = useCallback(async () => {
+    if (likeInFlightRef.current) return;
+    if (!user?.id) {
+      showAppAlert("Hyr ne llogari", "Duhet te hysh ne llogari per te pelqyer pergjigjet.");
+      return;
+    }
+    const nextLiked = !liked;
+    const previousLiked = liked;
+    const previousCount = likeCount;
+
+    likeInFlightRef.current = true;
+    setLiked(nextLiked);
+    setLikeCount((c) => Math.max(0, c + (nextLiked ? 1 : -1)));
+    try { Haptics?.impactAsync?.(Haptics.ImpactFeedbackStyle.Light); } catch (_) {}
+    if (nextLiked) eventTracker.like(video.id);
+
+    try {
+      const response = await answersApi.likeAnswer(video.id);
+      const data = response.data;
+      if (data && typeof data.liked === "boolean") {
+        setLiked(data.liked);
+        if (typeof data.likes === "number") setLikeCount(Math.max(0, data.likes));
+      }
+    } catch (error: any) {
+      setLiked(previousLiked);
+      setLikeCount(previousCount);
+      if (error?.response?.status === 429) {
+        showAppAlert("Ngadale", "Shume veprime brenda pak sekondave. Provo perseri pas pak.");
+      } else if (!error?.response) {
+        showAppAlert("Pa lidhje", "Pelqimi nuk u ruajt. Provo perseri kur te kesh internet.");
+      }
+    } finally {
+      likeInFlightRef.current = false;
+    }
+  }, [liked, likeCount, user?.id, video.id]);
 
   const togglePlay = async () => {
     if (isTextAnswer) return;
@@ -307,29 +354,36 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
       (chaosThread?.comment_count ?? video.chaos_thread?.comment_count ?? 0));
   const textAnswerBody = video.text_content || "";
   const mediaUri = video.video_url || "";
+  const requireLogin = () => {
+    if (user?.id) return true;
+    showAppAlert("Hyr ne llogari", "Duhet te hysh ne llogari per kete veprim.");
+    return false;
+  };
+
   const reportAnswer = () => {
-    Alert.alert("Report answer", "Why are you reporting this answer?", [
-      { text: "Cancel", style: "cancel" },
+    if (!requireLogin()) return;
+    Alert.alert("Raporto pergjigjen", "Pse e raporton kete pergjigje?", [
+      { text: "Anulo", style: "cancel" },
       {
         text: "Spam",
         onPress: async () => {
           try {
             await moderationApi.reportAnswer(video.id, { reason: "spam" });
-            Alert.alert("Reported", "Thanks. The moderation queue has it now.");
+            showAppAlert("U raportua", "Faleminderit. Ekipi i moderimit e ka marre.");
           } catch (_) {
-            Alert.alert("Could not report", "Try again in a moment.");
+            showAppAlert("Nuk u raportua", "Provo perseri pas pak.");
           }
         },
       },
       {
-        text: "Abuse",
+        text: "Abuzim",
         style: "destructive",
         onPress: async () => {
           try {
             await moderationApi.reportAnswer(video.id, { reason: "abuse" });
-            Alert.alert("Reported", "Thanks. The moderation queue has it now.");
+            showAppAlert("U raportua", "Faleminderit. Ekipi i moderimit e ka marre.");
           } catch (_) {
-            Alert.alert("Could not report", "Try again in a moment.");
+            showAppAlert("Nuk u raportua", "Provo perseri pas pak.");
           }
         },
       },
@@ -337,28 +391,31 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
   };
 
   const openSafetyActions = () => {
-    Alert.alert("Safety actions", `Manage @${video.username}`, [
-      { text: "Cancel", style: "cancel" },
+    Alert.alert("Me shume", `@${video.username}`, [
+      { text: "Anulo", style: "cancel" },
+      { text: "Raporto pergjigjen", onPress: reportAnswer },
       {
-        text: "Report user",
+        text: "Raporto perdoruesin",
         onPress: async () => {
+          if (!requireLogin()) return;
           try {
             await moderationApi.reportUser(video.user_id || 0, { reason: "abuse" });
-            Alert.alert("Reported", "The user report was submitted.");
+            showAppAlert("U raportua", "Raporti per perdoruesin u dergua.");
           } catch (_) {
-            Alert.alert("Could not report", "Try again in a moment.");
+            showAppAlert("Nuk u raportua", "Provo perseri pas pak.");
           }
         },
       },
       {
-        text: "Block user",
+        text: "Blloko perdoruesin",
         style: "destructive",
         onPress: async () => {
+          if (!requireLogin()) return;
           try {
             await moderationApi.blockUser(video.user_id || 0);
-            Alert.alert("Blocked", `You won't see @${video.username} in your feed anymore.`);
+            showAppAlert("U bllokua", `Nuk do ta shohesh me @${video.username} ne feed.`);
           } catch (_) {
-            Alert.alert("Could not block", "Try again in a moment.");
+            showAppAlert("Nuk u bllokua", "Provo perseri pas pak.");
           }
         },
       },
@@ -366,10 +423,10 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { height: resolvedHeight }]}>
       {/* Full-screen video */}
       <TouchableOpacity
-        style={styles.videoWrapper}
+        style={[styles.videoWrapper, { height: resolvedHeight }]}
         onPress={togglePlay}
         activeOpacity={1}
       >
@@ -594,30 +651,78 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
 
         {/* Right side action buttons (TikTok style) */}
         <View style={styles.sideActions}>
-          {/* Like */}
+          {isFeatureEnabled("duels_v1") && Number(video.user_id) !== Number(user?.id) ? (
+            <TouchableOpacity
+              style={styles.sideButton}
+              onPress={async () => {
+                if (challenging) return;
+                try {
+                  setChallenging(true);
+                  const result = await duelsApi.challengeOrQueue(video.id);
+                  if (result.kind === "queued") {
+                    showAppAlert(
+                      "Je ne radhe",
+                      "Ky lojtar eshte ne nje duel tjeter. Dueli yt hapet automatikisht sa gjendet rival."
+                    );
+                  } else {
+                    showAppAlert("Duel live", "Dueli u krijua. Hap tab Duels per te pare votat.");
+                  }
+                  navigation.navigate("Duels");
+                } catch (error: any) {
+                  const code = error?.response?.data?.error;
+                  if (code === "need_own_answer") {
+                    showAppAlert("Pergjigju fillimisht", "Posto pergjigjen tende ne te njejten pyetje dhe dueli niset automatikisht.");
+                    navigation.navigate("Record", {
+                      questionId: video.question_id,
+                      questionText: video.question_text,
+                      challengeAnswerId: video.id,
+                    });
+                    return;
+                  }
+                  if (code === "active_duel_exists") {
+                    showAppAlert("Nje duel ne kohe", "Ke nje duel aktiv. Shko te Duels.");
+                    navigation.navigate("Duels");
+                    return;
+                  }
+                  if (code === "cannot_duel_yourself") {
+                    showAppAlert("Duel", "Nuk mund te sfidosh veten.");
+                    return;
+                  }
+                  showAppAlert("Dueli deshtoi", "Provo perseri pas pak.");
+                } finally {
+                  setChallenging(false);
+                }
+              }}
+            >
+              <Ionicons name="flash" size={28} color="#3DFFC8" />
+              <Text style={[styles.sideButtonText, { color: "#3DFFC8" }]}>
+                {challenging ? "..." : "Duel"}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Like (feed vote) */}
           <TouchableOpacity
             style={styles.sideButton}
-            onPress={async () => {
-              if (!liked) {
-                setLiked(true);
-                setLikeCount((c) => c + 1);
-                eventTracker.like(video.id);
-                try { await answersApi.likeAnswer(video.id); } catch (_) {}
-              }
-            }}
+            onPress={toggleLike}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityState={{ selected: liked }}
+            accessibilityLabel={liked ? "Hiq pelqimin" : "Pelqe"}
           >
             <Ionicons
               name={liked ? "heart" : "heart-outline"}
               size={30}
-              color={liked ? "#FF3366" : "#FFF"}
+              color={liked ? "#FF2D6A" : "#FFF"}
             />
-            <Text style={styles.sideButtonText}>
-              {likeCount > 0 ? likeCount : "Like"}
+            <Text style={[styles.sideButtonText, liked && styles.sideButtonTextActive]}>
+              {likeCount > 0 ? likeCount : "Pelqe"}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.sideButton}
+            hitSlop={8}
             onPress={() => {
               try { Haptics?.impactAsync?.(Haptics.ImpactFeedbackStyle.Medium); } catch (_) {}
               setShowShareOverlay(true);
@@ -626,7 +731,7 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
             }}
           >
             <Ionicons name="share-social" size={28} color="#FFF" />
-            <Text style={styles.sideButtonText}>Share</Text>
+            <Text style={styles.sideButtonText}>Shperndaj</Text>
           </TouchableOpacity>
 
           {/* Comment */}
@@ -641,15 +746,12 @@ export function VideoCard({ video, isVisible, mountMedia = true, position }: Vid
             <Text style={styles.sideButtonText}>Komento</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.sideButton} onPress={reportAnswer}>
-            <Ionicons name="flag-outline" size={26} color="#FFF" />
-            <Text style={styles.sideButtonText}>Report</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.sideButton} onPress={openSafetyActions}>
-            <Ionicons name="ban-outline" size={26} color="#FFF" />
-            <Text style={styles.sideButtonText}>Block</Text>
-          </TouchableOpacity>
+          {Number(video.user_id) !== Number(user?.id) ? (
+            <TouchableOpacity style={styles.sideButton} onPress={openSafetyActions} hitSlop={8}>
+              <Ionicons name="ellipsis-horizontal-circle-outline" size={26} color="#FFF" />
+              <Text style={styles.sideButtonText}>Me shume</Text>
+            </TouchableOpacity>
+          ) : null}
 
           {video.answer_type === "video" && (
             <TouchableOpacity
@@ -754,8 +856,10 @@ function areVideoCardPropsEqual(prev: VideoCardProps, next: VideoCardProps) {
     prev.isVisible === next.isVisible &&
     prev.mountMedia === next.mountMedia &&
     prev.position === next.position &&
+    prev.cardHeight === next.cardHeight &&
     prev.video.id === next.video.id &&
     prev.video.likes === next.video.likes &&
+    prev.video.liked_by_me === next.video.liked_by_me &&
     prev.video.video_url === next.video.video_url
   );
 }
@@ -901,7 +1005,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingHorizontal: 16,
-    paddingBottom: 100,
+    paddingBottom: 28,
     paddingTop: 80,
     paddingRight: 80, // Space for side buttons
   },
@@ -997,13 +1101,14 @@ const styles = StyleSheet.create({
   sideActions: {
     position: "absolute",
     right: 12,
-    bottom: 160,
+    bottom: 96,
     alignItems: "center",
-    gap: 20,
+    gap: 18,
   },
   sideButton: {
     alignItems: "center",
     gap: 4,
+    minWidth: 52,
   },
   sideButtonText: {
     color: "#FFF",
@@ -1012,6 +1117,10 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.8)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  sideButtonTextActive: {
+    color: "#FF2D6A",
+    fontWeight: "800",
   },
   // 🔥 MICRO-UPGRADE 2: Progress bar
   progressBarContainer: {

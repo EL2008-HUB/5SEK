@@ -8,6 +8,8 @@ const {
   validateProfileUpdate,
   validateRefresh,
   validateRegister,
+  validateGuest,
+  validateUpgrade,
 } = require("../middleware/validation");
 const { createRateLimiter } = require("../middleware/rateLimit");
 
@@ -29,6 +31,15 @@ const registerRateLimit = createRateLimiter({
   message: "register_rate_limited",
 });
 
+// Guest sessions: 10 per hour per IP — enough for retries, bounded against farming
+const guestRateLimit = createRateLimiter({
+  scope: "auth:guest",
+  limit: 10,
+  windowMs: 60 * 60 * 1000,
+  keyStrategy: "ip",
+  message: "guest_rate_limited",
+});
+
 // Refresh/logout: 30 per 15 min per IP — generous but bounded
 const sessionRateLimit = createRateLimiter({
   scope: "auth:session",
@@ -44,6 +55,8 @@ const authHealthPayload = {
   endpoints: [
     "POST /api/auth/register",
     "POST /api/auth/login",
+    "POST /api/auth/guest",
+    "POST /api/auth/upgrade",
     "GET /api/auth/me",
   ],
 };
@@ -61,6 +74,8 @@ router.get("/health", (req, res) => {
 
 router.post("/register", registerRateLimit, validateRegister, authController.register);
 router.post("/login", loginRateLimit, validateLogin, authController.login);
+router.post("/guest", guestRateLimit, validateGuest, authController.guest);
+router.post("/upgrade", authController.authMiddleware, registerRateLimit, validateUpgrade, authController.upgrade);
 router.post("/refresh", sessionRateLimit, validateRefresh, authController.refresh);
 router.post("/logout", sessionRateLimit, validateLogout, authController.logout);
 

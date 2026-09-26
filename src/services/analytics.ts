@@ -11,6 +11,15 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 let currentSessionId = "";
 let sessionStartedAt = 0;
 let lastActivityAt = 0;
+let analyticsConsent = __DEV__;
+
+export function setAnalyticsConsent(enabled: boolean) {
+  analyticsConsent = enabled;
+}
+
+export function hasAnalyticsConsent() {
+  return analyticsConsent;
+}
 
 function createSessionId() {
   return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -22,15 +31,18 @@ function ensureSession() {
     currentSessionId = createSessionId();
     sessionStartedAt = now;
   }
-
   lastActivityAt = now;
-  return {
-    sessionId: currentSessionId,
-    sessionStartedAt,
-  };
+  return { sessionId: currentSessionId, sessionStartedAt };
+}
+
+function shouldTrack(eventType: ClientEventType) {
+  if (__DEV__) return true;
+  if (eventType === "session_recovery_failed") return true;
+  return analyticsConsent;
 }
 
 async function track(event: EventPayload) {
+  if (!shouldTrack(event.event_type)) return;
   try {
     const session = ensureSession();
     await analyticsApi.trackEvent({

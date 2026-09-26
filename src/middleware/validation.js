@@ -108,13 +108,50 @@ function validateRegister(req, res, next) {
   return next();
 }
 
-function validateLogin(req, res, next) {
-  const unknown = rejectUnknownFields(req, res, ["email", "password"]);
+function validateGuest(req, res, next) {
+  const unknown = rejectUnknownFields(req, res, ["country"]);
   if (unknown) return unknown;
 
-  const { email, password } = req.body;
-  if (!isNonEmptyString(email, { min: 5, max: 254 }) || !isNonEmptyString(password, { min: 1, max: 128 })) {
-    return badRequest(res, "email and password required");
+  if (req.body.country !== undefined && !isIsoCountryCode(req.body.country)) {
+    return badRequest(res, "country must be a valid country code");
+  }
+
+  return next();
+}
+
+function validateUpgrade(req, res, next) {
+  const unknown = rejectUnknownFields(req, res, ["username", "email", "password", "country"]);
+  if (unknown) return unknown;
+
+  const { username, email, password, country } = req.body;
+
+  if (!isNonEmptyString(username, { min: 3, max: 32 }) || !/^[a-zA-Z0-9_.]+$/.test(username.trim())) {
+    return badRequest(res, "username must be 3-32 characters (letters, numbers, _ or .)");
+  }
+
+  if (!isNonEmptyString(email, { min: 5, max: 254 }) || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
+    return badRequest(res, "valid email required");
+  }
+
+  if (!isNonEmptyString(password, { min: 8, max: 128 })) {
+    return badRequest(res, "password must be between 8 and 128 characters");
+  }
+
+  if (country !== undefined && !isIsoCountryCode(country)) {
+    return badRequest(res, "country must be a valid country code");
+  }
+
+  return next();
+}
+
+function validateLogin(req, res, next) {
+  const unknown = rejectUnknownFields(req, res, ["email", "username", "identifier", "password"]);
+  if (unknown) return unknown;
+
+  const identifier = req.body.email || req.body.username || req.body.identifier;
+  const { password } = req.body;
+  if (!isNonEmptyString(identifier, { min: 3, max: 254 }) || !isNonEmptyString(password, { min: 1, max: 128 })) {
+    return badRequest(res, "email or username and password required");
   }
 
   return next();
@@ -407,6 +444,16 @@ function validateDuelAuto(req, res, next) {
     return badRequest(res, "answer_id or video_a_url required");
   }
 
+  return next();
+}
+
+function validateDuelChallenge(req, res, next) {
+  const unknown = rejectUnknownFields(req, res, ["answer_id", "answerId", "opponent_answer_id"]);
+  if (unknown) return unknown;
+  const answerId = req.body.answer_id ?? req.body.answerId ?? req.body.opponent_answer_id;
+  if (!isPositiveInt(answerId)) {
+    return badRequest(res, "answer_id must be a positive integer");
+  }
   return next();
 }
 
@@ -703,6 +750,7 @@ module.exports = {
   validateCountryUpdate,
   validateCrossCountryCheck,
   validateDuelAuto,
+  validateDuelChallenge,
   validateDuelCreate,
   validateDuelFeedQuery,
   validateDuelVote,
@@ -720,6 +768,8 @@ module.exports = {
   validateRecalculate,
   validateRefresh,
   validateRegister,
+  validateGuest,
+  validateUpgrade,
   validateResolveReport,
   validateSetDaily,
   validateUserQuestionSubmit,

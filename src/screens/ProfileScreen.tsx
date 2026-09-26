@@ -17,6 +17,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
 import { usePush } from "../context/PushContext";
 import { answersApi, countryApi, moderationApi, paymentsApi, questionsApi } from "../services/api";
+import { isMonetizationEnabled } from "../utils/productionConfig";
 import { analytics } from "../services/analytics";
 import { buildFeedShareUrl } from "../services/deepLinks";
 import AdminConsole from "../components/AdminConsole";
@@ -24,6 +25,7 @@ import AccountOperations from "../components/AccountOperations";
 import AccountRequiredModal from "../components/AccountRequiredModal";
 import StatePanel from "../components/StatePanel";
 import PushOptInBanner from "../components/PushOptInBanner";
+import { Colors } from "../theme";
 
 const { width } = Dimensions.get("window");
 
@@ -173,6 +175,7 @@ export default function ProfileScreen() {
   };
 
   const openBillingPortal = async () => {
+    if (!isMonetizationEnabled()) return;
     try {
       const response = await paymentsApi.createPortal();
       if (response.data?.url) {
@@ -211,12 +214,12 @@ export default function ProfileScreen() {
   if (selectedInterests.length > 0) personalizationParts.push(selectedInterests.slice(0, 3).join(", "));
 
   return (
-    <LinearGradient colors={["#0A0A0A", "#1A1A2E"]} style={styles.container}>
+    <LinearGradient colors={Colors.background.gradient} style={styles.container}>
       <StatusBar style="light" />
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            <LinearGradient colors={["#FF3366", "#FF6B6B"]} style={styles.avatar}>
+            <LinearGradient colors={Colors.accent.primaryGradient} style={styles.avatar}>
               <Text style={styles.avatarText}>{profileUser.username.charAt(0).toUpperCase()}</Text>
             </LinearGradient>
           </View>
@@ -224,7 +227,7 @@ export default function ProfileScreen() {
           {isGuest ? (
             <TouchableOpacity
               style={styles.guestBanner}
-              onPress={() => setAccountRequired(true)}
+              onPress={() => navigation.navigate("UpgradeAccount")}
               activeOpacity={0.9}
             >
               <LinearGradient
@@ -234,12 +237,12 @@ export default function ProfileScreen() {
                 style={styles.guestBannerInner}
               >
                 <View style={styles.guestBannerCopy}>
-                  <Text style={styles.guestBannerTitle}>You're browsing as a guest</Text>
+                  <Text style={styles.guestBannerTitle}>Je futur si vizitor</Text>
                   <Text style={styles.guestBannerBody}>
-                    Create an account to keep your streak, comments, and profile.
+                    Krijo llogarine ne 20 sekonda: pergjigjet, duelet dhe piket e deritanishme mbeten te tua.
                   </Text>
                 </View>
-                <Text style={styles.guestBannerCta}>Sign up</Text>
+                <Text style={styles.guestBannerCta}>Krijo</Text>
               </LinearGradient>
             </TouchableOpacity>
           ) : null}
@@ -322,7 +325,7 @@ export default function ProfileScreen() {
               }
             >
               <View style={styles.answerIcon}>
-                <Ionicons name="notifications-outline" size={20} color="#6EEDC1" />
+                <Ionicons name="notifications-outline" size={20} color="#3DFFC8" />
               </View>
               <View style={styles.answerInfo}>
                 <Text style={styles.answerQuestion}>Enable notifications</Text>
@@ -381,7 +384,7 @@ export default function ProfileScreen() {
                     onPress={() => handleCountrySelect(country.code)}
                   >
                     <Text style={[styles.pickerLabel, isActive && styles.pickerLabelActive]}>{country.name}</Text>
-                    {isActive ? <Ionicons name="checkmark-circle" size={16} color="#FF3366" /> : null}
+                    {isActive ? <Ionicons name="checkmark-circle" size={16} color="#FF2D6A" /> : null}
                   </TouchableOpacity>
                 );
               })}
@@ -511,7 +514,7 @@ export default function ProfileScreen() {
             answers.map((item) => (
               <View key={item.id} style={styles.answerCard}>
                 <View style={styles.answerIcon}>
-                  <Ionicons name="videocam" size={20} color="#FF3366" />
+                  <Ionicons name="videocam" size={20} color="#FF2D6A" />
                 </View>
                 <View style={styles.answerInfo}>
                   <Text style={styles.answerQuestion} numberOfLines={2}>
@@ -530,11 +533,11 @@ export default function ProfileScreen() {
 
       <AccountRequiredModal
         visible={accountRequired}
-        title="Create your 5SEK account"
-        message="Guests can explore and answer. Sign up to keep your streak, comment, and save your profile."
-        onCreateAccount={async () => {
+        title="Krijo llogarine 5SEK"
+        message="Si vizitor mund te shikosh dhe te pergjigjesh. Krijo llogari per te ruajtur streak-un, komentet dhe profilin - pa humbur asgje."
+        onCreateAccount={() => {
           setAccountRequired(false);
-          await logout();
+          navigation.navigate("UpgradeAccount");
         }}
         onDismiss={() => setAccountRequired(false)}
       />
@@ -594,7 +597,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   guestBannerCta: {
-    color: "#6EEDC1",
+    color: "#3DFFC8",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -619,7 +622,7 @@ const styles = StyleSheet.create({
     gap: 30,
   },
   statItem: { alignItems: "center" },
-  statNumber: { color: "#FF3366", fontSize: 24, fontWeight: "800" },
+  statNumber: { color: "#FF2D6A", fontSize: 24, fontWeight: "800" },
   statLabel: { color: "#888", fontSize: 12, marginTop: 2 },
   statDivider: {
     width: 1,

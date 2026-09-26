@@ -1,0 +1,21 @@
+{
+  "appName": "5SEK",
+  "subtitle": "5-second video answers",
+  "shortDescription": "Answer daily questions in 5 seconds. Watch, vote, duel, share.",
+  "privacyPolicyUrl": "https://api.5sek.app/legal/privacy",
+  "termsUrl": "https://api.5sek.app/legal/terms",
+  "supportEmail": "support@5sek.app",
+  "ageRating": "16+",
+  "category": "Social",
+  "markets": [
+    "AL",
+    "XK"
+  ],
+  "dataSafety": {
+    "collectsVideo": true,
+    "collectsAudio": true,
+    "collectsEmail": true,
+    "sharesWithThirdParties": false,
+    "allowsAccountDeletion": true
+  }
+}

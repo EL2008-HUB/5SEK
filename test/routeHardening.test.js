@@ -318,6 +318,8 @@ test("auth and ai root routes expose lightweight health payloads", async () => {
       endpoints: [
         "POST /api/auth/register",
         "POST /api/auth/login",
+        "POST /api/auth/guest",
+        "POST /api/auth/upgrade",
         "GET /api/auth/me",
       ],
     });

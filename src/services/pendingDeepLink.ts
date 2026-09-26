@@ -25,7 +25,7 @@ export async function consumePendingDeepLink(): Promise<string | null> {
 
 export type DeepLinkTarget =
   | { type: "deep_answer"; answerId: number }
-  | { type: "tab"; screen: "Home" | "Trending" | "Record" | "Feed" | "Profile"; answerId?: number }
+  | { type: "tab"; screen: "Home" | "Duels" | "Record" | "Feed" | "Profile"; answerId?: number }
   | { type: "remix"; parentAnswerId: number }
   | { type: "question"; questionId: number };
 
@@ -63,9 +63,10 @@ export function parseDeepLinkTarget(url: string): DeepLinkTarget | null {
       if (!Number.isNaN(questionId)) return { type: "question", questionId };
     }
 
-    const tabMap: Record<string, "Home" | "Trending" | "Record" | "Feed" | "Profile"> = {
+    const tabMap: Record<string, "Home" | "Duels" | "Record" | "Feed" | "Profile"> = {
       home: "Home",
-      trending: "Trending",
+      duels: "Duels",
+      trending: "Duels",
       record: "Record",
       feed: "Feed",
       profile: "Profile",

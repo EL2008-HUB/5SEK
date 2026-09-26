@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { authApi, countryApi, experimentsApi, setSessionPersistence, setToken } from "../services/api";
-import { analytics } from "../services/analytics";
+import { authApi, countryApi, experimentsApi, legalApi, pushApi, setSessionPersistence, setToken } from "../services/api";
+import { analytics, setAnalyticsConsent } from "../services/analytics";
 import { setObservabilityUser } from "../services/observability";
 import { storage } from "../services/storage";
 
@@ -35,6 +35,13 @@ type AuthContextValue = {
   refreshUser: () => Promise<AuthUser | null>;
   login: (email: string, password: string) => Promise<AuthUser>;
   register: (payload: {
+    username: string;
+    email: string;
+    password: string;
+    country?: string;
+  }) => Promise<AuthUser>;
+  loginAsGuest: (country?: string) => Promise<AuthUser>;
+  upgradeAccount: (payload: {
     username: string;
     email: string;
     password: string;
@@ -106,6 +113,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const syncConsent = async () => {
+    try {
+      const response = await legalApi.getConsent();
+      setAnalyticsConsent(Boolean(response.data?.analytics));
+    } catch (_) {
+      setAnalyticsConsent(false);
+    }
+  };
+
   const refreshUser = async () => {
     const response = await authApi.me();
     const nextUser = normalizeUser(response.data);
@@ -115,6 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await storage.setItem(STORAGE_KEYS.user, JSON.stringify(nextUser));
     if (nextUser.id) {
       await syncAssignments();
+      await syncConsent();
     }
     return nextUser;
   };
@@ -126,6 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(nextUser);
     await syncFirstSessionState(nextUser);
     await syncAssignments();
+    await syncConsent();
     return nextUser;
   };
 
@@ -197,10 +215,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return applySession(response.data);
   };
 
+  const loginAsGuest = async (country?: string) => {
+    setBootstrapError(null);
+    const response = await authApi.guest(country);
+    analytics.track({ event_type: "guest_session_started", screen: "auth" });
+    return applySession(response.data);
+  };
+
+  const upgradeAccount = async (payload: {
+    username: string;
+    email: string;
+    password: string;
+    country?: string;
+  }) => {
+    setBootstrapError(null);
+    const response = await authApi.upgrade(payload);
+    analytics.track({ event_type: "guest_upgraded", screen: "profile" });
+    // Same user id, new role + fresh tokens. First-session state is already complete.
+    const nextUser = normalizeUser(response.data.user);
+    await persistSession(response.data.token, response.data.refresh_token, nextUser);
+    setUser(nextUser);
+    return nextUser;
+  };
+
   const logout = async () => {
     try {
+      const pushToken = await storage.getItem("@5sek_expo_push_token");
+      if (pushToken) {
+        try {
+          await pushApi.unregister(pushToken);
+        } catch (_) {}
+        await storage.removeItem("@5sek_expo_push_token");
+      }
       await authApi.logout();
     } catch (_) {}
+    setAnalyticsConsent(false);
     await clearPersistedSession();
     setUser(null);
     setNeedsFirstSession(false);
@@ -269,6 +318,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshUser,
       login,
       register,
+      loginAsGuest,
+      upgradeAccount,
       logout,
       updateProfile,
       completeFirstSession,

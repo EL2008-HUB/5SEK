@@ -57,6 +57,7 @@ interface AnswerFeedItem {
   response_time: number | null;
   created_at: string;
   likes?: number;
+  liked_by_me?: boolean;
   shares?: number;
   views?: number;
   category?: string;
@@ -85,7 +86,7 @@ interface DuelFeedCardItem extends DuelFeedItem {
 type FeedItem = AnswerFeedItem | DuelFeedCardItem;
 const ANSWERS_PER_PAGE = 20;
 const DUELS_PER_PAGE = 5;
-const DUEL_INJECTION_INTERVAL = 5;
+const DUEL_INJECTION_INTERVAL = 3;
 
 function asAnswerItems(rows: Omit<AnswerFeedItem, "feedType" | "feedKey">[]): AnswerFeedItem[] {
   return rows.map((row) => ({
@@ -145,7 +146,17 @@ export default function FeedScreen() {
   const [userCountry, setUserCountry] = useState("GLOBAL");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [servingCached, setServingCached] = useState(false);
+  // Real viewport height (window minus tab bar). Cards must match it or the bottom
+  // actions (duel vote buttons) end up hidden under the tab bar.
+  const [viewportHeight, setViewportHeight] = useState(height);
   const lastFetchAtRef = useRef(0);
+
+  const onContainerLayout = useCallback((event: { nativeEvent: { layout: { height: number } } }) => {
+    const nextHeight = Math.round(event.nativeEvent.layout.height);
+    if (nextHeight > 0 && Math.abs(nextHeight - viewportHeight) > 1) {
+      setViewportHeight(nextHeight);
+    }
+  }, [viewportHeight]);
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -194,7 +205,10 @@ export default function FeedScreen() {
       const serverHasMore = responseData.hasMore !== undefined ? responseData.hasMore : answerRows.length >= ANSWERS_PER_PAGE;
 
       const answerItems = asAnswerItems(answerRows);
-      const duelItems = asDuelItems(duelsResponse.data);
+      const duelRows = Array.isArray(duelsResponse.data)
+        ? duelsResponse.data
+        : duelsResponse.data?.items || [];
+      const duelItems = asDuelItems(duelRows);
 
       setNextCursor(serverCursor);
       setHasMore(serverHasMore);
@@ -225,7 +239,7 @@ export default function FeedScreen() {
           setHasMore(false);
           setNextCursor(null);
         } else {
-          setLoadError("Could not load the feed right now.");
+          setLoadError("Feed-i nuk mund te ngarkohet tani. Kontrollo lidhjen dhe provo perseri.");
           setServingCached(false);
         }
       }
@@ -322,14 +336,14 @@ export default function FeedScreen() {
 
   if (loading && items.length === 0) {
     return (
-      <View style={styles.container}>
-        <StatePanel variant="loading" message="Loading feed…" />
+      <View style={styles.container} onLayout={onContainerLayout}>
+        <StatePanel variant="loading" message="Duke ngarkuar feed-in…" />
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} onLayout={onContainerLayout}>
       <StatusBar style="light" />
 
       <View style={styles.countryHeader}>
@@ -365,9 +379,9 @@ export default function FeedScreen() {
 
       {servingCached ? (
         <View style={styles.offlineBanner} pointerEvents="box-none">
-          <Text style={styles.offlineBannerText}>Offline · showing saved feed</Text>
+          <Text style={styles.offlineBannerText}>Offline · feed i ruajtur</Text>
           <TouchableOpacity onPress={() => fetchFeed(null, true)} hitSlop={8}>
-            <Text style={styles.offlineBannerAction}>Retry</Text>
+            <Text style={styles.offlineBannerAction}>Provo</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -375,23 +389,24 @@ export default function FeedScreen() {
       {loadError ? (
         <StatePanel
           variant="error"
-          title="Feed unavailable"
+          title="Feed-i nuk u ngarkua"
           message={loadError}
-          primaryLabel="Try again"
+          primaryLabel="Provo perseri"
           onPrimaryPress={() => fetchFeed(null, true)}
         />
       ) : items.length === 0 ? (
         <StatePanel
           variant="empty"
-          title="No answers yet"
-          message="Be the first to answer today's question in 5 seconds."
-          primaryLabel="Record my answer"
+          title="Ende asnje pergjigje"
+          message="Behu i pari qe i pergjigjet pyetjes se dites ne 5 sekonda."
+          primaryLabel="Pergjigju tani"
           onPrimaryPress={() => navigation.navigate("Record")}
-          secondaryLabel="Refresh"
+          secondaryLabel="Rifresko"
           onSecondaryPress={onRefresh}
         />
       ) : (
         <FlatList
+          key={`feed-${viewportHeight}`}
           data={items}
           extraData={visibleIndex}
           keyExtractor={(item) => item.feedKey}
@@ -403,6 +418,7 @@ export default function FeedScreen() {
                 currentUserId={user?.id || 0}
                 isVisible={index === visibleIndex}
                 mountMedia={mountMedia}
+                cardHeight={viewportHeight}
                 onUpdated={handleDuelUpdated}
               />
             ) : (
@@ -411,12 +427,13 @@ export default function FeedScreen() {
                 isVisible={index === visibleIndex}
                 mountMedia={mountMedia}
                 position={index}
+                cardHeight={viewportHeight}
               />
             );
           }}
           pagingEnabled
           showsVerticalScrollIndicator={false}
-          snapToInterval={height}
+          snapToInterval={viewportHeight}
           snapToAlignment="start"
           decelerationRate="fast"
           onViewableItemsChanged={onViewableItemsChanged}
@@ -431,8 +448,8 @@ export default function FeedScreen() {
           initialNumToRender={1}
           updateCellsBatchingPeriod={50}
           getItemLayout={(_, index) => ({
-            length: height,
-            offset: height * index,
+            length: viewportHeight,
+            offset: viewportHeight * index,
             index,
           })}
         />
@@ -466,8 +483,8 @@ const styles = StyleSheet.create({
     borderRadius: 17,
   },
   toggleButtonActive: {
-    backgroundColor: "#FF3366",
-    shadowColor: "#FF3366",
+    backgroundColor: "#FF2D6A",
+    shadowColor: "#FF2D6A",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 5,

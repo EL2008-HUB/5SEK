@@ -271,7 +271,16 @@ export const authApi = {
     }),
 
   login: (email: string, password: string) =>
-    api.post("/auth/login", { email, password }),
+    api.post("/auth/login", { email, identifier: email, password }),
+
+  // Guest session: instant account with role "guest"; upgradeable later, same user id.
+  guest: (country?: string) =>
+    api.post("/auth/guest", {
+      country: country || _userCountry || undefined,
+    }),
+
+  upgrade: (payload: { username: string; email: string; password: string; country?: string }) =>
+    api.post("/auth/upgrade", payload),
 
   refresh: (token: string) =>
     refreshApi.post("/auth/refresh", { refresh_token: token }),
@@ -505,8 +514,11 @@ export const answersApi = {
   getDailyUsage: (userId: number) =>
     api.get(`/answers/daily-usage/${userId}`),
 
+  // Toggle like. Server returns { ok, liked, likes } with the authoritative state.
   likeAnswer: (answerId: number) =>
-    api.post(`/answers/${answerId}/like`, { country: _userCountry }),
+    api.post<{ ok: boolean; liked: boolean; likes: number }>(`/answers/${answerId}/like`, {
+      country: _userCountry,
+    }),
 
   shareAnswer: (answerId: number) =>
     api.post(`/answers/${answerId}/share`, { country: _userCountry }),
@@ -624,6 +636,86 @@ export const shareApi = {
     api.get("/share/kpis"),
 };
 
+/**
+ * Retry idempotent duel reads on network / 5xx failures so a flaky
+ * connection never empties the Duels tab.
+ */
+async function retryRead<T>(fn: () => Promise<T>, attempts = 3, baseDelayMs = 350): Promise<T> {
+  let lastError: any;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const status = error?.response?.status;
+      const retryable = !error?.response || (status >= 500 && status <= 599) || status === 429;
+      if (!retryable || attempt === attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+    }
+  }
+  throw lastError;
+}
+
+export type DuelQueueEntry = {
+  id: number;
+  question_id: number;
+  question_text?: string;
+  answer_id?: number | null;
+  created_at?: string;
+  expires_at?: string | null;
+  status?: string;
+};
+
+export type DuelCreateResult =
+  | { kind: "created"; duel: any }
+  | { kind: "queued"; queue: DuelQueueEntry; reason: string; message?: string };
+
+function toDuelCreateResult(response: any): DuelCreateResult {
+  if (response?.status === 202 || response?.data?.status === "queued") {
+    return {
+      kind: "queued",
+      queue: response.data?.queue || {},
+      reason: response.data?.error || "no_opponent",
+      message: response.data?.message,
+    };
+  }
+  return { kind: "created", duel: response.data };
+}
+
+export type LeaderboardPeriod = "today" | "week" | "all";
+
+export type LeaderboardEntry = {
+  rank: number | null;
+  user_id: number;
+  username: string;
+  country: string;
+  is_guest: boolean;
+  points: number;
+  breakdown: {
+    answers: number;
+    likes_received: number;
+    duels: number;
+    wins: number;
+    votes_received: number;
+  };
+  badge: { key: string; label: string } | null;
+};
+
+export type LeaderboardResponse = {
+  period: LeaderboardPeriod;
+  points: { answer: number; like: number; win: number; vote: number };
+  generated_at: string;
+  total_ranked: number;
+  entries: LeaderboardEntry[];
+  me: LeaderboardEntry | null;
+  next_rank: { rank: number; username: string; points_needed: number } | null;
+};
+
+export const leaderboardApi = {
+  get: (period: LeaderboardPeriod = "week", limit = 20) =>
+    retryRead(() => api.get<LeaderboardResponse>("/leaderboard", { params: { period, limit } })),
+};
+
 export const duelsApi = {
   create: (payload: {
     questionId: number;
@@ -653,21 +745,54 @@ export const duelsApi = {
       video_a_url: payload.videoA,
     }),
 
-  getFeed: (page = 1, limit = 10, _userId?: number, status?: "active" | "finished") =>
-    api.get("/duels", {
-      params: {
-        page,
-        limit,
-        status,
-      },
-    }),
+  /** Auto-match or queue. Resolves to a discriminated result instead of throwing on "no opponent". */
+  createAutoOrQueue: async (payload: {
+    questionId: number;
+    answerId?: number;
+    videoA?: string;
+  }): Promise<DuelCreateResult> =>
+    toDuelCreateResult(
+      await api.post("/duels/auto", {
+        question_id: payload.questionId,
+        answer_id: payload.answerId,
+        video_a_url: payload.videoA,
+      })
+    ),
 
-  getById: (duelId: number, _userId?: number) => api.get(`/duels/${duelId}`),
+  getFeed: (page = 1, limit = 10, _userId?: number, status?: "active" | "finished") =>
+    retryRead(() =>
+      api.get("/duels", {
+        params: {
+          page,
+          limit,
+          status,
+        },
+      })
+    ),
+
+  getById: (duelId: number, _userId?: number) => retryRead(() => api.get(`/duels/${duelId}`)),
+
+  getMine: () => retryRead(() => api.get("/duels/me")),
+
+  cancelQueue: (queueId: number) => api.delete(`/duels/queue/${queueId}`),
 
   vote: (duelId: number, _userId: number, vote: "A" | "B") =>
     api.post(`/duels/${duelId}/vote`, {
       vote,
     }),
+
+  challenge: (opponentAnswerId: number) =>
+    api.post("/duels/challenge", {
+      answer_id: opponentAnswerId,
+    }),
+
+  /** Challenge a specific answer; may resolve to "queued" when that player is busy. */
+  challengeOrQueue: async (opponentAnswerId: number): Promise<DuelCreateResult> =>
+    toDuelCreateResult(
+      await api.post("/duels/challenge", {
+        answer_id: opponentAnswerId,
+      })
+    ),
 };
 
 export const trendingApi = {

@@ -12,6 +12,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { duelsApi, getApiErrorMessage } from "../services/api";
 import { analytics } from "../services/analytics";
+import { buildDuelShareUrl } from "../services/deepLinks";
 import { showAppAlert } from "../utils/alerts";
 import { Colors } from "../theme";
 
@@ -149,11 +150,19 @@ function DuelCard({
   };
 
   const shareDuel = async () => {
+    const url = buildDuelShareUrl(localDuel.id);
+    const intro = isOwnDuel
+      ? isFinished
+        ? "Shiko si mbaroi dueli im ne 5SEK 🏆"
+        : "Me ndihmo te fitoj duelin ne 5SEK! Voto per mua ⚔️"
+      : isFinished
+        ? "Shiko kush fitoi kete duel ne 5SEK 🏆"
+        : "Kush e ka me mire? Voto ne 5SEK ⚔️";
     try {
       await Share.share({
-        message: `Voto ne duelin tim ne 5SEK: "${localDuel.question_text}" @${nameA} vs @${nameB}`,
+        message: `${intro}\n"${localDuel.question_text}"\n@${nameA} vs @${nameB}\n👉 ${url}`,
       });
-      analytics.shareOpened("duel", { duel_id: localDuel.id });
+      analytics.shareOpened("duel", { duel_id: localDuel.id, own: isOwnDuel });
     } catch (_) {}
   };
 
@@ -351,6 +360,15 @@ function DuelCard({
                 ? `Votove ${localDuel.your_vote} • ${isFinished ? "rezultati final" : "prit rezultatin"}`
                 : "Rezultati eshte final"}
             </Text>
+            <TouchableOpacity
+              style={styles.lockedShare}
+              onPress={shareDuel}
+              accessibilityRole="button"
+              accessibilityLabel="Shperndaje duelin"
+            >
+              <Ionicons name="share-social" size={14} color="#FFF" />
+              <Text style={styles.lockedShareText}>Shperndaj</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.actionsRow}>
@@ -616,6 +634,21 @@ const styles = StyleSheet.create({
   lockedText: {
     color: "rgba(255,255,255,0.8)",
     fontSize: 13,
+    fontWeight: "800",
+    flexShrink: 1,
+  },
+  lockedShare: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "rgba(139,92,255,0.45)",
+  },
+  lockedShareText: {
+    color: "#FFF",
+    fontSize: 12,
     fontWeight: "800",
   },
   textAnswerWrap: {

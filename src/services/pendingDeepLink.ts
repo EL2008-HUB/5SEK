@@ -27,7 +27,14 @@ export type DeepLinkTarget =
   | { type: "deep_answer"; answerId: number }
   | { type: "tab"; screen: "Home" | "Duels" | "Record" | "Feed" | "Profile"; answerId?: number }
   | { type: "remix"; parentAnswerId: number }
-  | { type: "question"; questionId: number };
+  | { type: "question"; questionId: number }
+  | { type: "challenge"; answerId: number }
+  | { type: "duel"; duelId: number };
+
+function positiveId(raw: string | undefined) {
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
 
 /**
  * Map five-second:// / https://5sek.app URLs to a navigation target.
@@ -51,6 +58,16 @@ export function parseDeepLinkTarget(url: string): DeepLinkTarget | null {
     if (segments[0] === "a" && segments[1]) {
       const answerId = Number(segments[1]);
       if (!Number.isNaN(answerId)) return { type: "deep_answer", answerId };
+    }
+
+    if (segments[0] === "c" || segments[0] === "challenge") {
+      const answerId = positiveId(segments[1]);
+      if (answerId) return { type: "challenge", answerId };
+    }
+
+    if (segments[0] === "d" || segments[0] === "duel") {
+      const duelId = positiveId(segments[1]);
+      if (duelId) return { type: "duel", duelId };
     }
 
     if (segments[0] === "remix" && segments[1]) {

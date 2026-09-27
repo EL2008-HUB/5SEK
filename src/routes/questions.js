@@ -57,6 +57,9 @@ router.get("/trending", questionController.getTrending);
 // GET /api/questions — random question (country-aware)
 router.get("/", questionController.getRandom);
 
+// GET /api/questions/:id — single question (share links)
+router.get("/:id", questionController.getById);
+
 // POST /api/questions — create question manually (with country)
 router.post("/", authMiddleware, adminRateLimit, requireAdmin, validateQuestionCreate, questionController.create);
 router.delete("/:id", authMiddleware, adminRateLimit, requireAdmin, validateEmptyBody, questionController.deleteQuestion);

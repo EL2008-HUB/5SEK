@@ -785,6 +785,7 @@ export function VideoCard({ video, isVisible, mountMedia = true, position, cardH
       {showShareOverlay && (
         <ShareOverlay
           video={video}
+          postAnswer={Boolean(user?.id) && Number(video.user_id) === Number(user?.id)}
           onClose={() => setShowShareOverlay(false)}
         />
       )}

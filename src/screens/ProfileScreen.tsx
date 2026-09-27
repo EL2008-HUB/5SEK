@@ -191,11 +191,11 @@ export default function ProfileScreen() {
       analytics.shareOpened("profile", { mode: "profile_share" });
       await Share.share({
         title: "5SEK",
-        message: `Jump into 5SEK: ${buildFeedShareUrl()}`,
+        message: `Ke 5 sekonda për t'u përgjigjur. Sfidomë në 5SEK ⚔️\n👉 ${buildFeedShareUrl()}`,
       });
       analytics.shareCompleted("profile", { mode: "profile_share" });
     } catch (_) {
-      Alert.alert("Share unavailable", "Could not open the share sheet.");
+      Alert.alert("Nuk u shpërnda", "Nuk u hap dot menyja e shpërndarjes.");
     }
   };
 

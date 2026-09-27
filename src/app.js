@@ -9,6 +9,7 @@ const { createRequestLogger, logger } = require("./services/logger");
 const { recordHttpRequest, renderPrometheusMetrics } = require("./services/metricsService");
 const { createMetricsAuthMiddleware } = require("./middleware/metricsAuth");
 const { termsDocument, privacyDocument, renderLegalHtml } = require("./services/legalContent");
+const shareLanding = require("./services/shareLanding");
 const { authMiddleware } = require("./controllers/authController");
 
 function getStartupSnapshot(startupState) {
@@ -217,10 +218,22 @@ function createCountryDetectionMiddleware() {
     res.json({
       applinks: {
         apps: [],
-        details: [{ appID: `${teamId}.${bundleId}`, paths: ["/a/*", "/feed", "/feed/*"] }],
+        details: [
+          {
+            appID: `${teamId}.${bundleId}`,
+            paths: ["/a/*", "/c/*", "/q/*", "/d/*", "/feed", "/feed/*"],
+          },
+        ],
       },
     });
   });
+
+  app.get("/a/:id", shareLanding.answerLanding);
+  app.get("/c/:id", shareLanding.challengeLanding);
+  app.get("/q/:id", shareLanding.questionLanding);
+  app.get("/d/:id", shareLanding.duelLanding);
+  app.get("/feed", shareLanding.inviteLanding);
+  app.get("/invite", shareLanding.inviteLanding);
 
   app.get("/.well-known/assetlinks.json", (req, res) => {
     const packageName = process.env.ANDROID_PACKAGE || "app.fivesek.mobile";

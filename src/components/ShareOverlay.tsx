@@ -22,6 +22,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
+  Linking,
   Share,
   StyleSheet,
   Text,
@@ -30,7 +31,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { buildAnswerShareUrl } from "../services/deepLinks";
+import { buildAnswerShareUrl, buildChallengeShareUrl } from "../services/deepLinks";
 import { shareApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
 
@@ -67,6 +68,11 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
   const [toast, setToast] = useState<string | null>(null);
   const toastFade = useRef(new Animated.Value(0)).current;
   const [creatorStats, setCreatorStats] = useState<any>(null);
+  const shareUrl = postAnswer ? buildChallengeShareUrl(video.id) : buildAnswerShareUrl(video.id);
+  const previewMessage = postAnswer
+    ? `Pata 5 sekonda për këtë 👀\n"${video.question_text}"\nMë mund dot? ⚔️`
+    : `A mund të përgjigjesh në 5 sekonda? 👀\n"${video.question_text}"`;
+  const shareMessage = `${previewMessage}\n\n${shareUrl}`;
 
   useEffect(() => {
     // 🔥 INSTANT open — no delay
@@ -100,9 +106,8 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
   // ── Auto-copy link ──
   const autoCopyLink = async () => {
     try {
-      const url = buildAnswerShareUrl(video.id);
       if (Clipboard?.setStringAsync) {
-        await Clipboard.setStringAsync(url);
+        await Clipboard.setStringAsync(shareUrl);
       }
     } catch (_) {}
   };
@@ -152,33 +157,38 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
   const shareNow = async (platform: string) => {
     haptic();
 
-    const url = buildAnswerShareUrl(video.id);
-    const message = `I had 5 seconds to answer this 👀\nCan you?\n\n${url}`;
-
-    // Track
     shareApi.trackEvent(video.id, "share_complete", platform).catch(() => {});
 
     try {
-      await Share.share({
-        message,
-        title: "5SEK Challenge",
+      const result = await Share.share({
+        message: shareMessage,
+        title: "Sfidë 5SEK",
       });
-      showToast("Shared! 🔥");
+      if (result?.action !== Share.dismissedAction) showToast("U shpërnda! 🔥");
     } catch (_) {
       // User cancelled
+    }
+  };
+
+  const shareWhatsApp = async () => {
+    haptic();
+    try {
+      await Linking.openURL(`whatsapp://send?text=${encodeURIComponent(shareMessage)}`);
+      shareApi.trackEvent(video.id, "share_complete", "whatsapp").catch(() => {});
+    } catch (_) {
+      shareNow("whatsapp");
     }
   };
 
   // ── Copy Link ──
   const copyLink = async () => {
     haptic();
-    const url = buildAnswerShareUrl(video.id);
 
     try {
       if (Clipboard?.setStringAsync) {
-        await Clipboard.setStringAsync(url);
+        await Clipboard.setStringAsync(shareUrl);
       }
-      showToast("Link copied 👌");
+      showToast("Linku u kopjua 👌");
 
       // Track
       shareApi.trackEvent(video.id, "share_complete", "copy_link").catch(() => {});
@@ -196,12 +206,12 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
 
   // Emotional trigger text
   const triggerText = postAnswer
-    ? "That was good 👀"
-    : "😳 Could you answer this?";
+    ? "Sfido një shok ⚔️"
+    : "😳 A mund ta mundë shoku yt?";
 
   const triggerSub = postAnswer
-    ? "Share your answer"
-    : "Share with a friend";
+    ? "Kur përgjigjet, fillon dueli 1v1 dhe të tjerët votojnë"
+    : "Dërgoja dikujt që mendon shpejt";
 
   return (
     <View style={styles.overlay}>
@@ -227,6 +237,13 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
             <Text style={styles.statPillText}>{creatorStats.labels.views}</Text>
           </View>
         )}
+
+        <TouchableOpacity style={styles.whatsappButton} onPress={shareWhatsApp} activeOpacity={0.8}>
+          <LinearGradient colors={["#25D366", "#128C7E"]} style={styles.bigButtonGradient}>
+            <Ionicons name="logo-whatsapp" size={26} color="#FFF" />
+            <Text style={styles.bigButtonText}>Dërgo në WhatsApp</Text>
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* ─── 2 BIG BUTTONS ─── */}
         <View style={styles.bigGrid}>
@@ -260,25 +277,25 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
           {/* Copy Link */}
           <TouchableOpacity style={styles.smallButton} onPress={copyLink} activeOpacity={0.7}>
             <Ionicons name="link" size={20} color="#FFF" />
-            <Text style={styles.smallButtonText}>Copy Link</Text>
+            <Text style={styles.smallButtonText}>Kopjo linkun</Text>
           </TouchableOpacity>
 
           {/* More... */}
           <TouchableOpacity style={styles.smallButton} onPress={shareMore} activeOpacity={0.7}>
             <Ionicons name="ellipsis-horizontal" size={20} color="#FFF" />
-            <Text style={styles.smallButtonText}>More...</Text>
+            <Text style={styles.smallButtonText}>Më shumë…</Text>
           </TouchableOpacity>
         </View>
 
         {/* Pre-filled message preview */}
         <View style={styles.previewBox}>
-          <Text style={styles.previewLabel}>Message:</Text>
-          <Text style={styles.previewText}>I had 5 seconds to answer this 👀{"\n"}Can you?</Text>
+          <Text style={styles.previewLabel}>Mesazhi:</Text>
+          <Text style={styles.previewText} numberOfLines={4}>{previewMessage}</Text>
         </View>
 
         {/* Cancel */}
         <TouchableOpacity style={styles.cancelButton} onPress={close}>
-          <Text style={styles.cancelText}>Cancel</Text>
+          <Text style={styles.cancelText}>Anulo</Text>
         </TouchableOpacity>
       </Animated.View>
 
@@ -368,6 +385,11 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 18,
     overflow: "hidden",
+  },
+  whatsappButton: {
+    borderRadius: 18,
+    overflow: "hidden",
+    marginBottom: 12,
   },
   bigButtonGradient: {
     flexDirection: "row",

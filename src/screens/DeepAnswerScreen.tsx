@@ -25,9 +25,12 @@ import StatePanel from "../components/StatePanel";
 import VideoCard from "../components/VideoCard";
 import { answersApi, shareApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
+import { useAuth } from "../context/AuthContext";
 
 export default function DeepAnswerScreen({ route, navigation }: any) {
   const answerId = Number(route?.params?.answerId);
+  const isChallenge = route?.name === "Challenge" || route?.params?.challenge === true;
+  const { user } = useAuth();
   const [answer, setAnswer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +42,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
 
   const loadAnswer = useCallback(() => {
     if (!answerId || Number.isNaN(answerId)) {
-      setError("This link looks incomplete.");
+      setError("Ky link duket i paplotë.");
       setLoading(false);
       setAnswer(null);
       return;
@@ -100,7 +103,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
           .catch(() => {});
       })
       .catch(() => {
-        setError("We couldn't open this answer. It may have been removed.");
+        setError("Nuk e hapëm dot këtë përgjigje. Mund të jetë fshirë.");
         setLoading(false);
         setAnswer(null);
       });
@@ -118,6 +121,14 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
     }
   };
 
+  const close = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.replace("Main");
+  };
+
+  const isOwnAnswer = Boolean(user?.id && answer?.user_id && Number(answer.user_id) === Number(user.id));
+  const creatorName = answer?.username ? `@${answer.username}` : "Dikush";
+
   const answerThis = () => {
     if (!answer) return;
 
@@ -131,6 +142,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
           questionId: answer.question_id,
           questionText: answer.question_text,
           fromDeepLink: true,
+          challengeAnswerId: isOwnAnswer ? undefined : answer.id,
         },
       });
     } catch (_) {
@@ -142,7 +154,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
     return (
       <View style={styles.center}>
         <LinearGradient colors={["#090C17", "#14142A"]} style={StyleSheet.absoluteFill} />
-        <StatePanel variant="loading" message="Loading answer…" />
+        <StatePanel variant="loading" message="Po hapim përgjigjen…" />
       </View>
     );
   }
@@ -154,11 +166,11 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
         <StatePanel
           variant="error"
           icon="🔗"
-          title="Couldn't open answer"
-          message={error || "Something went wrong opening this link."}
-          primaryLabel="Try again"
+          title="Linku nuk u hap"
+          message={error || "Diçka shkoi keq me këtë link."}
+          primaryLabel="Provo sërish"
           onPrimaryPress={loadAnswer}
-          secondaryLabel="Browse feed"
+          secondaryLabel="Shiko feed-in"
           onSecondaryPress={goToFeed}
         />
       </View>
@@ -170,13 +182,19 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
       {/* Show the answer full-screen */}
       <VideoCard video={answer} isVisible={true} position={0} />
 
-      {/* Persistent overlay: "Can you answer this?" */}
       <Animated.View style={[styles.persistentOverlay, { opacity: fadeIn }]}>
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={close}
+          accessibilityRole="button"
+          accessibilityLabel="Mbyll"
+        >
+          <Ionicons name="close" size={20} color="#FFF" />
+        </TouchableOpacity>
         <View style={styles.persistentBadge}>
-          <Text style={styles.persistentText}>👀 Can you answer this?</Text>
-        </View>
-        <View style={styles.persistentBadge}>
-          <Text style={styles.persistentText}>⏱ 5 seconds only</Text>
+          <Text style={styles.persistentText}>
+            {isChallenge && !isOwnAnswer ? "⚔️ Sfidë duel 1v1" : "⏱ Vetëm 5 sekonda"}
+          </Text>
         </View>
       </Animated.View>
 
@@ -190,7 +208,18 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
           },
         ]}
       >
-        <Text style={styles.ctaHook}>Can you answer this? 😳</Text>
+        <Text style={styles.ctaHook}>
+          {isOwnAnswer
+            ? "Kjo është përgjigja jote 🔥"
+            : isChallenge
+              ? `${creatorName} të sfidoi! ⚔️`
+              : "A mund ta mundësh? 😳"}
+        </Text>
+        {!isOwnAnswer ? (
+          <Text style={styles.ctaSub}>
+            Përgjigju në 5 sekonda — të tjerët votojnë kush fiton.
+          </Text>
+        ) : null}
         <Text style={styles.ctaQuestion} numberOfLines={2}>
           {answer.question_text}
         </Text>
@@ -225,8 +254,10 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
-                <Ionicons name="mic" size={20} color="#FFF" />
-                <Text style={styles.ctaPrimaryText}>Answer in 5 seconds</Text>
+                <Ionicons name={isOwnAnswer ? "mic" : "flash"} size={20} color="#FFF" />
+                <Text style={styles.ctaPrimaryText}>
+                  {isOwnAnswer ? "Përgjigju sërish" : "Prano sfidën · 5 sek"}
+                </Text>
               </LinearGradient>
             </TouchableOpacity>
           </Animated.View>
@@ -234,7 +265,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
           {/* Secondary: Watch more */}
           <TouchableOpacity style={styles.ctaSecondary} onPress={goToFeed}>
             <Ionicons name="play-circle-outline" size={18} color="#FF6B8A" />
-            <Text style={styles.ctaSecondaryText}>Watch more answers</Text>
+            <Text style={styles.ctaSecondaryText}>Shiko më shumë përgjigje</Text>
           </TouchableOpacity>
         </View>
       </Animated.View>
@@ -261,7 +292,22 @@ const styles = StyleSheet.create({
     right: 16,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     zIndex: 10,
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ctaSub: {
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 8,
   },
   persistentBadge: {
     backgroundColor: "rgba(0,0,0,0.6)",

@@ -112,7 +112,11 @@ export default function RecordScreen({ route, navigation }: any) {
     text: route?.params?.questionText,
   };
   const [fetchedQuestion, setFetchedQuestion] = useState<any>(null);
-  const question = routeQuestion?.id ? routeQuestion : fetchedQuestion || routeQuestion;
+  const question = routeQuestion?.id
+    ? routeQuestion.text
+      ? routeQuestion
+      : { ...routeQuestion, text: fetchedQuestion?.id === Number(routeQuestion.id) ? fetchedQuestion.text : undefined }
+    : fetchedQuestion || routeQuestion;
   const [autoDuel, setAutoDuel] = useState(true);
   const [duelOutcome, setDuelOutcome] = useState<DuelCreateResult | null>(null);
   const entryMode = route?.params?.mode;
@@ -163,10 +167,11 @@ export default function RecordScreen({ route, navigation }: any) {
 
   // Opened from the tab bar without a question: load today's question.
   useEffect(() => {
-    if (routeQuestion?.id) return;
+    if (routeQuestion?.id && routeQuestion?.text) return;
     let cancelled = false;
-    questionsApi
-      .getDaily()
+    const routeQuestionId = Number(routeQuestion?.id) || null;
+    const request = routeQuestionId ? questionsApi.getById(routeQuestionId) : questionsApi.getDaily();
+    request
       .then((res) => {
         if (!cancelled && res.data?.id) setFetchedQuestion(res.data);
       })
@@ -174,7 +179,7 @@ export default function RecordScreen({ route, navigation }: any) {
     return () => {
       cancelled = true;
     };
-  }, [routeQuestion?.id]);
+  }, [routeQuestion?.id, routeQuestion?.text]);
 
   const toggleAutoDuel = () => {
     Vibration.vibrate(8);
@@ -1168,7 +1173,7 @@ export default function RecordScreen({ route, navigation }: any) {
             id: latestPostedAnswer.id,
             video_url: latestPostedAnswer.video_url || null,
             username: user?.username || "you",
-            question_text: question?.text || "Can you answer this?",
+            question_text: question?.text || "Pyetja e ditës në 5SEK",
             response_time: rewardData?.response_time || null,
             user_id: user?.id,
           }}

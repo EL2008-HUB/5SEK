@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
 import { useConnectivity } from "../context/ConnectivityContext";
 import { getApiErrorMessage } from "../services/api";
+import { parseDeepLinkTarget, peekPendingDeepLink } from "../services/pendingDeepLink";
 import { getLegalPrivacyUrl, getLegalTermsUrl } from "../utils/productionConfig";
 import { Colors, Shadows } from "../theme";
 
@@ -41,6 +42,45 @@ export default function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [confirmedAge, setConfirmedAge] = useState(false);
+  const [invite, setInvite] = useState<"challenge" | "duel" | "answer" | "invite" | null>(null);
+
+  // The navigator stashes incoming links asynchronously, so re-check shortly after mount and on new URLs.
+  useEffect(() => {
+    let cancelled = false;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const check = async () => {
+      const url = await peekPendingDeepLink().catch(() => null);
+      if (cancelled || !url) return;
+      const target = parseDeepLinkTarget(url);
+      if (!target) return;
+      setInvite(
+        target.type === "challenge" || target.type === "duel"
+          ? target.type
+          : target.type === "deep_answer"
+            ? "answer"
+            : "invite"
+      );
+    };
+    check();
+    timers.push(setTimeout(check, 700));
+    const sub = Linking.addEventListener("url", () => {
+      timers.push(setTimeout(check, 300));
+    });
+    return () => {
+      cancelled = true;
+      timers.forEach(clearTimeout);
+      sub.remove();
+    };
+  }, []);
+
+  const inviteCopy =
+    invite === "challenge"
+      ? { title: "Një shok të sfidoi në duel ⚔️", sub: "Hyr me një prekje dhe prano sfidën." }
+      : invite === "duel"
+        ? { title: "Të ftuan të votosh në një duel 🔥", sub: "Hyr me një prekje dhe vendos fituesin." }
+        : invite === "answer"
+          ? { title: "Një shok të dërgoi një përgjigje 👀", sub: "Hyr me një prekje dhe shiko nëse e mund." }
+          : { title: "Një shok të ftoi në 5SEK 👋", sub: "Hyr me një prekje — pa llogari, pa pritje." };
 
   const canSubmit = useMemo(() => {
     if (!password) return false;
@@ -118,6 +158,36 @@ export default function AuthScreen() {
             <Text style={styles.logo}>5SEK</Text>
             <Text style={styles.tagline}>5 sekonda. Nje pergjigje. Go live.</Text>
           </View>
+
+          {invite ? (
+            <View style={styles.inviteCard}>
+              <Text style={styles.inviteTitle}>{inviteCopy.title}</Text>
+              <Text style={styles.inviteSub}>{inviteCopy.sub}</Text>
+              <TouchableOpacity
+                onPress={continueAsGuest}
+                disabled={guestSubmitting || submitting}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel="Hyr dhe vazhdo"
+              >
+                <LinearGradient
+                  colors={Colors.accent.primaryGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.inviteButton}
+                >
+                  {guestSubmitting ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="flash" size={18} color="#FFF" />
+                      <Text style={styles.inviteButtonText}>Hyr dhe vazhdo</Text>
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           <View style={styles.card}>
             <View style={styles.tabs}>
@@ -332,6 +402,25 @@ const styles = StyleSheet.create({
   logoMarkText: { color: "#FFF", fontSize: 32, fontWeight: "900" },
   logo: { color: "#FFF", fontSize: 42, fontWeight: "900", letterSpacing: 2 },
   tagline: { color: "rgba(255,255,255,0.62)", marginTop: 8, fontSize: 15, fontWeight: "600" },
+  inviteCard: {
+    backgroundColor: "rgba(255,45,106,0.12)",
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255,45,106,0.45)",
+    padding: 18,
+    marginBottom: 16,
+  },
+  inviteTitle: { color: "#FFF", fontSize: 18, fontWeight: "900" },
+  inviteSub: { color: "rgba(255,255,255,0.7)", fontSize: 13, fontWeight: "600", marginTop: 4, marginBottom: 14 },
+  inviteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 15,
+    borderRadius: 18,
+  },
+  inviteButtonText: { color: "#FFF", fontSize: 16, fontWeight: "900" },
   card: {
     backgroundColor: "rgba(12,12,20,0.82)",
     borderRadius: 28,

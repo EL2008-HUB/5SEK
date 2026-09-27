@@ -34,6 +34,18 @@ export function buildAnswerShareUrl(answerId: number) {
   return `${WEB_APP_BASE_URL}/a/${answerId}`;
 }
 
+// ── Challenge deep links (answering starts a duel against the sharer) ──
+
+export function buildChallengeShareUrl(answerId: number) {
+  return `${WEB_APP_BASE_URL}/c/${answerId}`;
+}
+
+// ── Duel deep links ──
+
+export function buildDuelShareUrl(duelId: number) {
+  return `${WEB_APP_BASE_URL}/d/${duelId}`;
+}
+
 // ── Feed deep links ──
 
 export function buildFeedDeepLink(answerId?: number | null) {
@@ -71,12 +83,12 @@ export function buildShareCaption(
 
   switch (platform) {
     case "tiktok":
-      return `${questionText} ⏱ I had 5 seconds. Your turn. #5sek #fyp #quiz`;
+      return `${questionText} ⏱ Pata 5 sekonda. Radha jote. #5sek #fyp #quiz`;
     case "instagram":
-      return `${questionText}\n\n⏱ You have 5 seconds!\nI had 5 seconds. Your turn.\n🔗 Link in bio\n\n#5sek #5secondanswer #reels`;
+      return `${questionText}\n\n⏱ Ke 5 sekonda!\nPata 5 sekonda. Radha jote.\n🔗 Linku në bio\n\n#5sek #5sekonda #reels`;
     case "whatsapp":
-      return `🎯 ${questionText}\n\nI had 5 seconds. Your turn.\n⏱ Answer in 5 seconds: ${url}`;
+      return `🎯 ${questionText}\n\nPata 5 sekonda. Radha jote.\n⏱ Përgjigju këtu: ${url}`;
     default:
-      return `I had 5 seconds. Your turn.\n👉 ${url}\n\n#5sek #5secondanswer #quiz`;
+      return `Pata 5 sekonda. Radha jote.\n👉 ${url}\n\n#5sek #5sekonda #quiz`;
   }
 }

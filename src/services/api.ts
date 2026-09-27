@@ -306,6 +306,8 @@ export const questionsApi = {
   getDaily: (country?: string) =>
     api.get("/questions/daily", { params: { country: country || _userCountry } }),
 
+  getById: (questionId: number) => retryRead(() => api.get(`/questions/${questionId}`)),
+
   getAll: (country?: string) =>
     api.get("/questions/all", { params: { country: country || _userCountry } }),
 

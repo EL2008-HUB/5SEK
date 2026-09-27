@@ -4,6 +4,7 @@ import { authApi, countryApi, experimentsApi, legalApi, pushApi, setSessionPersi
 import { analytics, setAnalyticsConsent } from "../services/analytics";
 import { setObservabilityUser } from "../services/observability";
 import { storage } from "../services/storage";
+import { peekPendingDeepLink } from "../services/pendingDeepLink";
 
 const STORAGE_KEYS = {
   token: "@5sek_auth_token",
@@ -100,9 +101,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const firstSessionKey = (nextUser: AuthUser) =>
     `${STORAGE_KEYS.firstSessionComplete}:${nextUser.id}`;
 
-  const syncFirstSessionState = async (nextUser: AuthUser) => {
-    const completed = await storage.getItem(firstSessionKey(nextUser));
-    setNeedsFirstSession(completed !== "1");
+  const readNeedsFirstSession = async (nextUser: AuthUser) =>
+    (await storage.getItem(firstSessionKey(nextUser))) !== "1";
+
+  // user and needsFirstSession must flip in the same tick: otherwise the pending
+  // deep link replays for one render and is lost when FirstSession mounts.
+  const setUserWithFirstSession = async (nextUser: AuthUser) => {
+    const needs = await readNeedsFirstSession(nextUser);
+    setNeedsFirstSession(needs);
+    setUser(nextUser);
+  };
+
+  // Invited users (opened a friend's link) go straight to the challenge.
+  const skipIntroIfInvited = async (rawUser: any) => {
+    if (!rawUser?.id) return;
+    try {
+      if (await peekPendingDeepLink()) {
+        await storage.setItem(firstSessionKey(normalizeUser(rawUser)), "1");
+      }
+    } catch (_) {}
   };
 
   const syncAssignments = async () => {
@@ -125,8 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshUser = async () => {
     const response = await authApi.me();
     const nextUser = normalizeUser(response.data);
-    setUser(nextUser);
-    await syncFirstSessionState(nextUser);
+    await setUserWithFirstSession(nextUser);
     await countryApi.setCountry(nextUser.country || "GLOBAL");
     await storage.setItem(STORAGE_KEYS.user, JSON.stringify(nextUser));
     if (nextUser.id) {
@@ -140,8 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const nextUser = normalizeUser(payload.user);
     await persistSession(payload.token, payload.refresh_token, nextUser);
     await countryApi.setCountry(nextUser.country || "GLOBAL");
-    setUser(nextUser);
-    await syncFirstSessionState(nextUser);
+    await setUserWithFirstSession(nextUser);
     await syncAssignments();
     await syncConsent();
     return nextUser;
@@ -177,8 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nextUser
             );
             await countryApi.setCountry(nextUser.country || country);
-            setUser(nextUser);
-            await syncFirstSessionState(nextUser);
+            await setUserWithFirstSession(nextUser);
             await syncAssignments();
             return;
           } catch (_) {}
@@ -212,6 +226,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }) => {
     setBootstrapError(null);
     const response = await authApi.register(username, email, password, country);
+    await skipIntroIfInvited(response.data?.user);
     return applySession(response.data);
   };
 
@@ -219,6 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBootstrapError(null);
     const response = await authApi.guest(country);
     analytics.track({ event_type: "guest_session_started", screen: "auth" });
+    await skipIntroIfInvited(response.data?.user);
     return applySession(response.data);
   };
 

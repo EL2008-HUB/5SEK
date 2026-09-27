@@ -310,6 +310,29 @@ exports.getAll = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────
+// GET /api/questions/:id  — single question (share links)
+// ─────────────────────────────────────────────
+exports.getById = async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(404).json({ error: "question_not_found" });
+  }
+  try {
+    const question = await req
+      .db("questions")
+      .where({ id })
+      .whereNull("deleted_at")
+      .select("id", "text", "category", "country")
+      .first();
+    if (!question) return res.status(404).json({ error: "question_not_found" });
+    res.json(question);
+  } catch (error) {
+    console.error("Get question error:", error);
+    res.status(500).json({ error: "Failed to get question" });
+  }
+};
+
+// ─────────────────────────────────────────────
 // POST /api/questions  — create manually (with country)
 // ─────────────────────────────────────────────
 exports.create = async (req, res) => {

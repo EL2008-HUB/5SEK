@@ -24,6 +24,7 @@ import FirstSessionFlowScreen, {
 import DuelsScreen from "../screens/DuelsScreen";
 import LeaderboardScreen from "../screens/LeaderboardScreen";
 import UpgradeAccountScreen from "../screens/UpgradeAccountScreen";
+import DuelDetailScreen from "../screens/DuelDetailScreen";
 import { isAllowedDeepLink } from "../services/deepLinks";
 import {
   consumePendingDeepLink,
@@ -117,6 +118,14 @@ function navigateFromDeepLink(navigationRef: any, url: string) {
       navigationRef.navigate("DeepAnswer", { answerId: String(target.answerId) });
       return true;
     }
+    if (target.type === "challenge") {
+      navigationRef.navigate("Challenge", { answerId: String(target.answerId) });
+      return true;
+    }
+    if (target.type === "duel") {
+      navigationRef.navigate("DuelLink", { duelId: String(target.duelId) });
+      return true;
+    }
     if (target.type === "remix") {
       navigationRef.navigate("RemixRecord", { parentAnswerId: target.parentAnswerId });
       return true;
@@ -171,6 +180,8 @@ export default function AppNavigator() {
         DeepAnswer: "answer/:answerId",
         // Alternate path: /a/:answerId (short URL)
         DeepAnswer2: "a/:answerId",
+        Challenge: "c/:answerId",
+        DuelLink: "d/:duelId",
         TextAnswer: "text-answer",
         AudioAnswer: "audio-answer",
         Leaderboard: "leaderboard",
@@ -261,6 +272,8 @@ export default function AppNavigator() {
             <Stack.Screen name="AudioAnswer" component={AudioAnswerScreen} />
             <Stack.Screen name="DeepAnswer" component={DeepAnswerScreen} />
             <Stack.Screen name="DeepAnswer2" component={DeepAnswerScreen} />
+            <Stack.Screen name="Challenge" component={DeepAnswerScreen} />
+            <Stack.Screen name="DuelLink" component={DuelDetailScreen} />
             <Stack.Screen name="Leaderboard" component={LeaderboardScreen} />
             <Stack.Screen
               name="UpgradeAccount"

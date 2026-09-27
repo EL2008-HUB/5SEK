@@ -1,9 +1,19 @@
 {
   "cli": {
-    "version": ">= 16.5.0"
+    "version": ">= 16.5.0",
+    "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://5sek-api.onrender.com/api",
+        "EXPO_PUBLIC_WEB_URL": "https://5sek-api.onrender.com",
+        "EXPO_PUBLIC_IOS_BUNDLE_ID": "app.fivesek.mobile",
+        "EXPO_PUBLIC_ANDROID_PACKAGE": "app.fivesek.mobile"
+      }
+    },
     "development": {
+      "extends": "base",
       "developmentClient": true,
       "distribution": "internal"
     },
@@ -14,20 +24,32 @@
       }
     },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": false
+      },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.5sek.app/api",
+        "APP_ENV": "preview",
         "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "preview"
       }
     },
     "production": {
+      "extends": "base",
       "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": false
+      },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.5sek.app/api",
+        "APP_ENV": "production",
         "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "production",
-        "EXPO_PUBLIC_MONETIZATION_ENABLED": "false",
-        "EXPO_PUBLIC_IOS_BUNDLE_ID": "app.fivesek.mobile",
-        "EXPO_PUBLIC_ANDROID_PACKAGE": "app.fivesek.mobile"
+        "EXPO_PUBLIC_MONETIZATION_ENABLED": "false"
       }
     }
   },

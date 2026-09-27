@@ -20,7 +20,10 @@
     "seed:dev": "node scripts/seed-dev-data.js",
     "seed:staging": "node scripts/seed-staging.js",
     "smoke": "node scripts/smoke-check.js",
-    "test": "node --test --test-force-exit \"test/*.test.js\""
+    "test": "node --test --test-force-exit \"test/*.test.js\"",
+    "build:android": "npx eas-cli build --platform android --profile preview",
+    "build:ios": "npx eas-cli build --platform ios --profile preview",
+    "build:stores": "npx eas-cli build --platform all --profile production"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

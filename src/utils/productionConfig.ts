@@ -19,7 +19,7 @@ export function getPublicApiOrigin(): string {
     process.env.EXPO_PUBLIC_API_URL ||
     "";
   const normalized = String(apiUrl).trim().replace(/\/$/, "");
-  if (!normalized) return "https://api.5sek.app";
+  if (!normalized) return "https://5sek-api.onrender.com";
   return normalized.replace(/\/api$/, "");
 }
 

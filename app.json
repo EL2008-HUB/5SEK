@@ -15,7 +15,9 @@
     },
     "ios": {
       "supportsTablet": false,
-      "userInterfaceStyle": "dark"
+      "userInterfaceStyle": "dark",
+      "bundleIdentifier": "app.fivesek.mobile",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -25,7 +27,9 @@
       "userInterfaceStyle": "dark",
       "softwareKeyboardLayoutMode": "resize",
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "app.fivesek.mobile",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png",

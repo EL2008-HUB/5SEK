@@ -10,9 +10,26 @@
  *   Web: https://5sek.app/a/123
  */
 
-export const WEB_APP_BASE_URL = "https://5sek.app";
+import Constants from "expo-constants";
 
-const ALLOWED_HTTPS_HOSTS = new Set(["5sek.app", "www.5sek.app", "app.5sek.app"]);
+function resolveWebBaseUrl() {
+  const configured = String((Constants.expoConfig?.extra as any)?.webUrl || process.env.EXPO_PUBLIC_WEB_URL || "").trim();
+  return (configured || "https://5sek.app").replace(/\/+$/, "");
+}
+
+export const WEB_APP_BASE_URL = resolveWebBaseUrl();
+
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch (_) {
+    return null;
+  }
+}
+
+const ALLOWED_HTTPS_HOSTS = new Set(
+  ["5sek.app", "www.5sek.app", "app.5sek.app", hostOf(WEB_APP_BASE_URL)].filter(Boolean) as string[]
+);
 
 export function isAllowedDeepLink(url: string) {
   try {

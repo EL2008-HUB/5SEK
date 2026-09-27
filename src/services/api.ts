@@ -68,6 +68,12 @@ function getApiBaseUrl(): string {
     null;
   if (configured) return rewriteLoopbackUrlForDevice(String(configured)).replace(/\/$/, "");
 
+  // Standalone installs (TestFlight, APK, App Store, Play Store) have no Metro host.
+  // Never fall back to localhost there — the phone cannot reach the dev machine.
+  if (!__DEV__) {
+    return "https://5sek-api.onrender.com/api";
+  }
+
   const explicit = process.env.EXPO_PUBLIC_API_URL;
   if (explicit) return rewriteLoopbackUrlForDevice(explicit).replace(/\/$/, "");
 

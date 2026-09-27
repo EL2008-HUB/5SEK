@@ -219,30 +219,31 @@ exports.getDaily = async (req, res) => {
 
       if (countryStatRow && countryStatRow.score > 100) {
         const COUNTRY_NAMES = {
-          AL: "Albania 🇦🇱",
-          US: "USA 🇺🇸",
-          DE: "Germany 🇩🇪",
-          UK: "UK 🇬🇧",
-          XK: "Kosovo 🇽🇰",
-          TR: "Turkey 🇹🇷",
-          IT: "Italy 🇮🇹",
+          AL: "Shqipëri 🇦🇱",
+          US: "SHBA 🇺🇸",
+          DE: "Gjermani 🇩🇪",
+          UK: "Britani 🇬🇧",
+          XK: "Kosovë 🇽🇰",
+          TR: "Turqi 🇹🇷",
+          IT: "Itali 🇮🇹",
         };
-        trendingBadge = `🔥 Trending in ${COUNTRY_NAMES[country] || country}`;
+        trendingBadge = `🔥 Trend në ${COUNTRY_NAMES[country] || country}`;
       }
     } catch (_) {}
 
     // ── Enhanced FOMO labels ──────────────────────
-    let fomoLabel = "Be the first to answer! 🔥";
+    const people = (n) => `${n} ${n === 1 ? "person" : "veta"}`;
+    let fomoLabel = "Bëhu i pari që përgjigjet! 🔥";
     if (isHot && recentAnswers > 5) {
-      fomoLabel = `⚡ Blowing up right now — ${recentAnswers} in the last 10 min!`;
+      fomoLabel = `⚡ Po shpërthen tani — ${recentAnswers} në 10 minutat e fundit!`;
     } else if (recentAnswers >= 10) {
-      fomoLabel = `🔥 ${recentAnswers} people answered in the last 10 min!`;
+      fomoLabel = `🔥 ${people(recentAnswers)} u përgjigjën në 10 minutat e fundit!`;
     } else if (recentAnswers > 0) {
-      fomoLabel = `👀 ${recentAnswers} ${recentAnswers === 1 ? "person" : "people"} answered in the last 10 min`;
+      fomoLabel = `👀 ${people(recentAnswers)} u përgjigj${recentAnswers === 1 ? "" : "ën"} në 10 minutat e fundit`;
     } else if (totalAnswers > 20) {
-      fomoLabel = `🚀 ${totalAnswers} people already answered today`;
+      fomoLabel = `🚀 ${people(totalAnswers)} janë përgjigjur sot`;
     } else if (totalAnswers > 0) {
-      fomoLabel = `${totalAnswers} ${totalAnswers === 1 ? "person" : "people"} answered today`;
+      fomoLabel = `${people(totalAnswers)} ${totalAnswers === 1 ? "është përgjigjur" : "janë përgjigjur"} sot`;
     }
 
     // 1-hour velocity for extra FOMO
@@ -275,12 +276,12 @@ exports.getDaily = async (req, res) => {
         recent_label: fomoLabel,
         avg_response_time: avgTime,
         velocity_label: hourlyAnswers > 10
-          ? `⚡ ${hourlyAnswers} answers in the last hour`
+          ? `⚡ ${hourlyAnswers} përgjigje në orën e fundit`
           : null,
       },
       countdown: {
         seconds_until_tomorrow: secondsUntilTomorrow,
-        label: "New question in",
+        label: "Pyetja e re për",
       },
     });
   } catch (error) {

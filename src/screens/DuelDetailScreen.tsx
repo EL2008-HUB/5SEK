@@ -6,11 +6,13 @@ import DuelCard, { DuelFeedItem } from "../components/DuelCard";
 import StatePanel from "../components/StatePanel";
 import { duelsApi, getApiErrorMessage } from "../services/api";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { Colors } from "../theme";
 
 export default function DuelDetailScreen({ route, navigation }: any) {
   const duelId = Number(route?.params?.duelId);
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const [duel, setDuel] = useState<DuelFeedItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +66,7 @@ export default function DuelDetailScreen({ route, navigation }: any) {
   return (
     <View style={styles.container}>
       <LinearGradient colors={Colors.background.authGradient} style={StyleSheet.absoluteFill} />
-      <View style={styles.safe}>
+      <View style={[styles.safe, { paddingTop: insets.headerTop(0), paddingBottom: insets.footerBottom(8) }]}>
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.iconButton}
@@ -102,6 +104,7 @@ export default function DuelDetailScreen({ route, navigation }: any) {
               currentUserId={Number(user?.id) || 0}
               isVisible
               cardHeight={cardHeight}
+              topInset={12}
               onUpdated={setDuel}
             />
           ) : null}
@@ -125,7 +128,7 @@ export default function DuelDetailScreen({ route, navigation }: any) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#050508" },
-  safe: { flex: 1, paddingTop: 48, paddingBottom: 28 },
+  safe: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",

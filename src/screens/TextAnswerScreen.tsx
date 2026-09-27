@@ -19,6 +19,7 @@ import { StatusBar } from "expo-status-bar";
 import RewardOverlay from "../components/RewardOverlay";
 import PaywallModal from "../components/PaywallModal";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { answersApi, duelsApi, paywallApi, paymentsApi } from "../services/api";
 import { isFeatureEnabled } from "../services/featureFlags";
 import { showAppAlert } from "../utils/alerts";
@@ -37,6 +38,7 @@ export default function TextAnswerScreen({ route, navigation }: any) {
   };
   const challengeAnswerId = Number(route?.params?.challengeAnswerId) || null;
   const { user } = useAuth();
+  const insets = useScreenInsets();
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [countdown, setCountdown] = useState(MAX_SECONDS);
@@ -228,7 +230,7 @@ export default function TextAnswerScreen({ route, navigation }: any) {
       <StatusBar style="light" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.headerTop(8) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>

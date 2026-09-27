@@ -10,6 +10,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { storage } from "../services/storage";
 
 const PENDING_RECORD_KEY = "@5sek_pending_record_after_onboarding";
@@ -31,6 +32,7 @@ type Props = {
  */
 export default function FirstSessionFlowScreen({ onComplete }: Props) {
   const { completeFirstSession } = useAuth();
+  const insets = useScreenInsets();
   const { width } = useWindowDimensions();
   const [step, setStep] = useState(0);
   const fade = useRef(new Animated.Value(1)).current;
@@ -58,12 +60,12 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
     if (step === 0) {
       return (
         <>
-          <Text style={styles.kicker}>Welcome to 5SEK</Text>
+          <Text style={styles.kicker}>Mirë se erdhe në 5SEK</Text>
           <Text style={[styles.headline, { maxWidth: headlineMax }]}>
-            Answer anything in 5 seconds
+            Përgjigju çdo pyetjeje në 5 sekonda
           </Text>
           <Text style={styles.body}>
-            Short video, audio, or text. No scripts, no polish required — just your first thought.
+            Video, zë ose tekst. Pa skenar, pa përgatitje — vetëm mendimi yt i parë.
           </Text>
         </>
       );
@@ -72,18 +74,18 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
     if (step === 1) {
       return (
         <>
-          <Text style={styles.kicker}>How it works</Text>
+          <Text style={styles.kicker}>Si funksionon</Text>
           <View style={styles.previewCard}>
             <Ionicons name="flash" size={36} color="#3DFFC8" />
             <Text style={styles.previewTitle}>Regjistro → Posto → Voto</Text>
             <Text style={styles.previewBody}>
-              Feed 5-sekondash, remix, komente dhe duels 1v1.
+              Feed 5-sekondash, remix, komente dhe duele 1v1.
             </Text>
           </View>
           <View style={styles.bulletRow}>
-            <Text style={styles.bullet}>• Local + global feeds</Text>
-            <Text style={styles.bullet}>• Remix, komente dhe duels</Text>
-            <Text style={styles.bullet}>• Guest mode — upgrade anytime</Text>
+            <Text style={styles.bullet}>• Feed lokal dhe global</Text>
+            <Text style={styles.bullet}>• Sfido shokët në duel dhe hyr në renditje</Text>
+            <Text style={styles.bullet}>• Si vizitor — krijo llogari kur të duash</Text>
           </View>
         </>
       );
@@ -92,20 +94,24 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
     return (
       <>
         <Ionicons name="videocam" size={48} color="#FF2D6A" />
-        <Text style={[styles.headline, { maxWidth: headlineMax }]}>Ready when you are</Text>
+        <Text style={[styles.headline, { maxWidth: headlineMax }]}>Gati kur të jesh ti</Text>
         <Text style={styles.body}>
-          Your first answer unlocks the real loop. Hit record, speak for 5 seconds, and you are live
-          in the feed.
+          Përgjigja e parë hap gjithë lojën. Shtyp regjistro, fol 5 sekonda dhe je live në feed.
         </Text>
       </>
     );
   };
 
-  const primaryLabel = step === 2 ? "Record my first answer" : "Continue";
+  const primaryLabel = step === 2 ? "Regjistro përgjigjen e parë" : "Vazhdo";
 
   return (
     <LinearGradient colors={["#050508", "#1A0B24", "#0A1220"]} style={styles.container}>
-      <Animated.View style={[styles.inner, { opacity: fade }]}>
+      <Animated.View
+        style={[
+          styles.inner,
+          { opacity: fade, paddingTop: insets.headerTop(24), paddingBottom: insets.footerBottom(20) },
+        ]}
+      >
         <View style={styles.dots}>
           {[0, 1, 2].map((i) => (
             <View key={i} style={[styles.dot, i === step && styles.dotActive]} />
@@ -131,7 +137,7 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
 
         {step === 2 ? (
           <TouchableOpacity onPress={() => goNext(false)} style={styles.skip}>
-            <Text style={styles.skipText}>Explore the feed first</Text>
+            <Text style={styles.skipText}>Shiko feed-in më parë</Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
@@ -141,7 +147,7 @@ export default function FirstSessionFlowScreen({ onComplete }: Props) {
             }}
             style={styles.skip}
           >
-            <Text style={styles.skipText}>Skip for now</Text>
+            <Text style={styles.skipText}>Kalo tani</Text>
           </TouchableOpacity>
         )}
       </Animated.View>

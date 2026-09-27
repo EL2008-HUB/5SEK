@@ -13,6 +13,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Video, ResizeMode } from "expo-av";
 import { answersApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 
 const { width, height } = Dimensions.get("window");
 
@@ -39,6 +40,7 @@ interface RemixChainViewProps {
 }
 
 export default function RemixChainView({ answerId, onClose, onRemix }: RemixChainViewProps) {
+  const insets = useScreenInsets();
   const [chain, setChain] = useState<ChainItem[]>([]);
   const [root, setRoot] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -144,7 +146,7 @@ export default function RemixChainView({ answerId, onClose, onRemix }: RemixChai
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.headerTop(8) }]}>
         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
           <Ionicons name="close" size={28} color="#FFF" />
         </TouchableOpacity>

@@ -10,6 +10,7 @@ import {
 import { Video, ResizeMode } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { duelsApi, getApiErrorMessage } from "../services/api";
 import { analytics } from "../services/analytics";
 import { buildDuelShareUrl } from "../services/deepLinks";
@@ -78,6 +79,8 @@ interface DuelCardProps {
   mountMedia?: boolean;
   /** Visible height of the card (feed viewport minus tab bar). Defaults to window height. */
   cardHeight?: number;
+  /** Space reserved above the card content; defaults to status bar + feed header. */
+  topInset?: number;
   onUpdated?: (duel: DuelFeedItem) => void;
 }
 
@@ -87,8 +90,10 @@ function DuelCard({
   isVisible,
   mountMedia = true,
   cardHeight,
+  topInset,
   onUpdated,
 }: DuelCardProps) {
+  const safeTop = Math.max(useSafeAreaInsets().top, 20);
   const [localDuel, setLocalDuel] = useState<DuelFeedItem>(duel);
   const [submittingVote, setSubmittingVote] = useState(false);
   const [mediaFailed, setMediaFailed] = useState<{ A: boolean; B: boolean }>({ A: false, B: false });
@@ -307,7 +312,13 @@ function DuelCard({
   };
 
   return (
-    <View style={[styles.container, { height: resolvedHeight }, compact && styles.containerCompact]}>
+    <View
+      style={[
+        styles.container,
+        compact && styles.containerCompact,
+        { height: resolvedHeight, paddingTop: topInset ?? safeTop + (compact ? 44 : 52) },
+      ]}
+    >
       <LinearGradient colors={[...Colors.background.gradient]} style={StyleSheet.absoluteFill} />
 
       <View style={styles.header}>
@@ -402,13 +413,11 @@ function DuelCard({
 const styles = StyleSheet.create({
   container: {
     width,
-    paddingTop: 96,
     paddingHorizontal: 16,
     paddingBottom: 20,
     justifyContent: "space-between",
   },
   containerCompact: {
-    paddingTop: 88,
     paddingBottom: 14,
   },
   header: {
@@ -671,6 +680,7 @@ function areDuelCardPropsEqual(prev: DuelCardProps, next: DuelCardProps) {
     prev.isVisible === next.isVisible &&
     prev.mountMedia === next.mountMedia &&
     prev.cardHeight === next.cardHeight &&
+    prev.topInset === next.topInset &&
     prev.currentUserId === next.currentUserId &&
     prev.duel.id === next.duel.id &&
     prev.duel.votes_a === next.duel.votes_a &&

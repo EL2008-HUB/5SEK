@@ -12,6 +12,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { dropsApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
 import { useNavigation } from "@react-navigation/native";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 
 const { width } = Dimensions.get("window");
 
@@ -38,6 +39,7 @@ interface DropBannerProps {
 
 export default function DropBanner({ country }: DropBannerProps) {
   const navigation = useNavigation<any>();
+  const insets = useScreenInsets();
   const [activeDrop, setActiveDrop] = useState<DropData | null>(null);
   const [nextDrop, setNextDrop] = useState<NextDropData | null>(null);
   const [lastCompletedDropId, setLastCompletedDropId] = useState<number | null>(null);
@@ -229,7 +231,7 @@ export default function DropBanner({ country }: DropBannerProps) {
   if (lastCompletedDropId) {
     return (
       <Animated.View
-        style={[styles.container, { transform: [{ translateY: slideAnim }] }]}
+        style={[styles.container, { top: insets.headerTop(2), transform: [{ translateY: slideAnim }] }]}
       >
         <TouchableOpacity
           style={styles.replayBanner}
@@ -253,7 +255,7 @@ export default function DropBanner({ country }: DropBannerProps) {
   if (nextDrop && countdown > 0 && countdown < 7200) {
     return (
       <Animated.View
-        style={[styles.container, { transform: [{ translateY: slideAnim }] }]}
+        style={[styles.container, { top: insets.headerTop(2), transform: [{ translateY: slideAnim }] }]}
       >
         <View style={styles.nextBanner}>
           <View style={styles.nextRow}>

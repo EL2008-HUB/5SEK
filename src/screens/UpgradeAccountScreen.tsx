@@ -16,6 +16,7 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { getApiErrorMessage } from "../services/api";
 import { showAppAlert } from "../utils/alerts";
 import { getLegalPrivacyUrl, getLegalTermsUrl } from "../utils/productionConfig";
@@ -30,6 +31,7 @@ const PERKS = [
 export default function UpgradeAccountScreen() {
   const navigation = useNavigation<any>();
   const { user, isGuest, upgradeAccount } = useAuth();
+  const insets = useScreenInsets();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -100,7 +102,11 @@ export default function UpgradeAccountScreen() {
       <View style={styles.orbA} />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingTop: insets.headerTop(14), paddingBottom: insets.footerBottom(28) }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <TouchableOpacity style={styles.close} onPress={() => navigation.goBack()} hitSlop={10}>
             <Ionicons name="close" size={22} color="#FFF" />
           </TouchableOpacity>

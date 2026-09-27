@@ -14,6 +14,7 @@ import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import {
   LeaderboardEntry,
   LeaderboardPeriod,
@@ -54,6 +55,7 @@ function displayName(entry: LeaderboardEntry) {
 export default function LeaderboardScreen() {
   const navigation = useNavigation<any>();
   const { user, isGuest } = useAuth();
+  const insets = useScreenInsets();
   const [period, setPeriod] = useState<LeaderboardPeriod>("week");
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -207,7 +209,7 @@ export default function LeaderboardScreen() {
     <LinearGradient colors={Colors.background.gradient} style={styles.container}>
       <StatusBar style="light" />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: insets.headerTop(8), paddingBottom: insets.footerBottom(36) }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl

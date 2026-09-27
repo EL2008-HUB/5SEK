@@ -25,7 +25,6 @@ const profilesSampleRate = Number(extra.sentryProfilesSampleRate || process.env.
 
 export const navigationIntegration = Sentry.reactNavigationIntegration({
   enableTimeToInitialDisplay: true,
-  useFullPathsForNavigationRoutes: true,
 });
 
 let installed = false;

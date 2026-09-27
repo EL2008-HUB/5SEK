@@ -14,6 +14,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { useConnectivity } from "../context/ConnectivityContext";
 import { getApiErrorMessage } from "../services/api";
 import { parseDeepLinkTarget, peekPendingDeepLink } from "../services/pendingDeepLink";
@@ -21,8 +22,8 @@ import { getLegalPrivacyUrl, getLegalTermsUrl } from "../utils/productionConfig"
 import { Colors, Shadows } from "../theme";
 
 const COUNTRY_PRESETS = [
-  { code: "AL", label: "Shqiperi" },
-  { code: "XK", label: "Kosove" },
+  { code: "AL", label: "Shqipëri" },
+  { code: "XK", label: "Kosovë" },
   { code: "US", label: "USA" },
   { code: "DE", label: "Germany" },
   { code: "GLOBAL", label: "Global" },
@@ -30,6 +31,7 @@ const COUNTRY_PRESETS = [
 
 export default function AuthScreen() {
   const { login, register, loginAsGuest } = useAuth();
+  const insets = useScreenInsets();
   const { status, refresh } = useConnectivity();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -110,10 +112,10 @@ export default function AuthScreen() {
     } catch (submitError: any) {
       const fallback =
         status === "degraded"
-          ? "Nuk lidhemi me serverin. Provo perseri."
+          ? "Nuk lidhemi me serverin. Provo sërish."
           : mode === "login"
-          ? "Email/username ose fjalekalimi nuk perputhen."
-          : "Nuk u krijua llogaria. Provo perseri.";
+          ? "Email/username ose fjalëkalimi nuk përputhen."
+          : "Nuk u krijua llogaria. Provo sërish.";
       setError(getApiErrorMessage(submitError, fallback));
     } finally {
       setSubmitting(false);
@@ -130,10 +132,10 @@ export default function AuthScreen() {
       const code = guestError?.response?.data?.error;
       const fallback =
         status === "degraded"
-          ? "Nuk lidhemi me serverin. Provo perseri."
+          ? "Nuk lidhemi me serverin. Provo sërish."
           : code === "guest_rate_limited"
-          ? "Shume hyrje si vizitor nga kjo lidhje. Provo pas pak ose krijo llogari."
-          : "Nuk u hap sesioni si vizitor. Provo perseri.";
+          ? "Shumë hyrje si vizitor nga kjo lidhje. Provo pas pak ose krijo llogari."
+          : "Nuk u hap sesioni si vizitor. Provo sërish.";
       setError(getApiErrorMessage(guestError, fallback));
     } finally {
       setGuestSubmitting(false);
@@ -147,7 +149,7 @@ export default function AuthScreen() {
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.flex}>
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingTop: insets.headerTop(28), paddingBottom: insets.footerBottom(28) }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -156,7 +158,7 @@ export default function AuthScreen() {
               <Text style={styles.logoMarkText}>5</Text>
             </LinearGradient>
             <Text style={styles.logo}>5SEK</Text>
-            <Text style={styles.tagline}>5 sekonda. Nje pergjigje. Go live.</Text>
+            <Text style={styles.tagline}>5 sekonda. Një përgjigje. Live.</Text>
           </View>
 
           {invite ? (
@@ -229,7 +231,7 @@ export default function AuthScreen() {
             </View>
 
             <View style={styles.field}>
-              <Text style={styles.label}>Fjalekalimi</Text>
+              <Text style={styles.label}>Fjalëkalimi</Text>
               <View style={styles.passwordWrap}>
                 <TextInput
                   value={password}
@@ -274,21 +276,21 @@ export default function AuthScreen() {
                     Pranoj{" "}
                     <Text style={styles.link} onPress={() => Linking.openURL(getLegalTermsUrl())}>kushtet</Text>
                     {" "}dhe{" "}
-                    <Text style={styles.link} onPress={() => Linking.openURL(getLegalPrivacyUrl())}>privatesine</Text>.
+                    <Text style={styles.link} onPress={() => Linking.openURL(getLegalPrivacyUrl())}>privatësinë</Text>.
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.checkRow} onPress={() => setConfirmedAge((v) => !v)}>
                   <View style={[styles.checkbox, confirmedAge && styles.checkboxOn]}>
                     {confirmedAge ? <Ionicons name="checkmark" size={12} color="#050508" /> : null}
                   </View>
-                  <Text style={styles.checkLabel}>Kam te pakten 16 vjec.</Text>
+                  <Text style={styles.checkLabel}>Kam të paktën 16 vjeç.</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
 
             {status === "degraded" ? (
               <TouchableOpacity style={styles.offline} onPress={refresh}>
-                <Text style={styles.offlineText}>Nuk ka lidhje me API. Trokit per te riprovuar.</Text>
+                <Text style={styles.offlineText}>Nuk ka lidhje me serverin. Prek për të provuar sërish.</Text>
               </TouchableOpacity>
             ) : null}
 
@@ -309,7 +311,7 @@ export default function AuthScreen() {
                 {submitting ? (
                   <ActivityIndicator color="#FFF" />
                 ) : (
-                  <Text style={styles.submitText}>{mode === "login" ? "Hyr ne 5SEK" : "Fillo tani"}</Text>
+                  <Text style={styles.submitText}>{mode === "login" ? "Hyr në 5SEK" : "Fillo tani"}</Text>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -338,15 +340,15 @@ export default function AuthScreen() {
               )}
             </TouchableOpacity>
             <Text style={styles.guestHint}>
-              Pa email, pa fjalekalim. Pergjigju, voto dhe bej duel menjehere - llogarine e krijon kur te duash,
-              pa humbur asgje.
+              Pa email, pa fjalëkalim. Përgjigju, voto dhe bëj duel menjëherë — llogarinë e krijon kur të duash,
+              pa humbur asgjë.
             </Text>
           </View>
 
           <View style={styles.perksRow}>
             <View style={styles.perk}>
               <Text style={styles.perkEmoji}>⚡</Text>
-              <Text style={styles.perkText}>5 sekonda per pergjigje</Text>
+              <Text style={styles.perkText}>5 sekonda për përgjigje</Text>
             </View>
             <View style={styles.perk}>
               <Text style={styles.perkEmoji}>⚔️</Text>

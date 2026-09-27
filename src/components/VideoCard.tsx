@@ -22,6 +22,7 @@ import { eventTracker } from "../services/eventTracker";
 import { isFeatureEnabled } from "../services/featureFlags";
 import { showAppAlert } from "../utils/alerts";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { useNavigation } from "@react-navigation/native";
 
 // Safe haptics import (may not be installed)
@@ -77,6 +78,7 @@ export function VideoCard({ video, isVisible, mountMedia = true, position, cardH
   const videoRef = useRef<Video>(null);
   const navigation = useNavigation<any>();
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const resolvedHeight = cardHeight && cardHeight > 0 ? cardHeight : height;
   const [challenging, setChallenging] = useState(false);
   const isTextAnswer = video.answer_type === "text" || video.answer_type === "reaction";
@@ -435,7 +437,7 @@ export function VideoCard({ video, isVisible, mountMedia = true, position, cardH
             colors={video.answer_type === "reaction" ? ["#1D2340", "#32195E"] : ["#131A2D", "#12243A"]}
             style={styles.textAnswerCanvas}
           >
-            <View style={styles.textAnswerBadge}>
+            <View style={[styles.textAnswerBadge, { top: insets.headerTop(84) }]}>
               <Text style={styles.textAnswerBadgeText}>
                 {video.answer_type === "reaction" ? "REACTION" : "TEXT"}
               </Text>
@@ -503,7 +505,7 @@ export function VideoCard({ video, isVisible, mountMedia = true, position, cardH
         {/* Top gradient */}
         <LinearGradient
           colors={["rgba(0,0,0,0.6)", "transparent"]}
-          style={styles.topGradient}
+          style={[styles.topGradient, { paddingTop: insets.headerTop(42) }]}
         >
           {/* 5 SEK badge */}
           <View style={styles.badge}>

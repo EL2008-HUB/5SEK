@@ -15,6 +15,7 @@ import DuelCard, { DuelFeedItem } from "../components/DuelCard";
 import DropBanner from "../components/DropBanner";
 import StatePanel from "../components/StatePanel";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { answersApi, countryApi, duelsApi } from "../services/api";
 import { analytics } from "../services/analytics";
 import { isFeatureEnabled } from "../services/featureFlags";
@@ -134,6 +135,7 @@ function mixFeedItems(answerItems: AnswerFeedItem[], duelItems: DuelFeedCardItem
 
 export default function FeedScreen() {
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const navigation = useNavigation<any>();
   const [feedMode, setFeedMode] = useState<"local" | "global">("local");
   const [items, setItems] = useState<FeedItem[]>([]);
@@ -346,7 +348,7 @@ export default function FeedScreen() {
     <View style={styles.container} onLayout={onContainerLayout}>
       <StatusBar style="light" />
 
-      <View style={styles.countryHeader}>
+      <View style={[styles.countryHeader, { top: insets.headerTop(2) }]}>
         <View style={styles.toggleContainer}>
           <TouchableOpacity
             style={[styles.toggleButton, feedMode === "local" && styles.toggleButtonActive]}
@@ -373,12 +375,12 @@ export default function FeedScreen() {
       <DropBanner country={userCountry} />
 
       {/* 🔥 Fusion Loop: Compact streak in feed header */}
-      <View style={styles.fusionHeader}>
+      <View style={[styles.fusionHeader, { top: insets.headerTop(2) }]}>
         <StreakBar compact />
       </View>
 
       {servingCached ? (
-        <View style={styles.offlineBanner} pointerEvents="box-none">
+        <View style={[styles.offlineBanner, { top: insets.headerTop(48) }]} pointerEvents="box-none">
           <Text style={styles.offlineBannerText}>Offline · feed i ruajtur</Text>
           <TouchableOpacity onPress={() => fetchFeed(null, true)} hitSlop={8}>
             <Text style={styles.offlineBannerAction}>Provo</Text>

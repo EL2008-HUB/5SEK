@@ -12,6 +12,7 @@ import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { API_BASE_URL, questionsApi, countryApi } from "../services/api";
 import { analytics } from "../services/analytics";
 import DropBanner from "../components/DropBanner";
@@ -72,6 +73,7 @@ interface LearnedPattern {
 
 export default function HomeScreen({ navigation }: any) {
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const [question, setQuestion] = useState<Question | null>(null);
   const [loading, setLoading] = useState(true);
   const [apiOffline, setApiOffline] = useState(false);
@@ -326,7 +328,7 @@ export default function HomeScreen({ navigation }: any) {
   return (
     <LinearGradient
       colors={Colors.background.gradient}
-      style={[GlobalStyles.container, { paddingTop: 50 }]}
+      style={[GlobalStyles.container, { paddingTop: insets.headerTop(6) }]}
     >
       <StatusBar style="light" />
 
@@ -365,9 +367,9 @@ export default function HomeScreen({ navigation }: any) {
       {!COMPACT_HOME ? <PushOptInBanner compact /> : null}
       {servingCached ? (
         <View style={styles.cachedBanner}>
-          <Text style={styles.cachedBannerText}>Offline · showing saved question</Text>
+          <Text style={styles.cachedBannerText}>Pa internet · pyetja e ruajtur</Text>
           <TouchableOpacity onPress={() => fetchDaily()} hitSlop={8}>
-            <Text style={styles.cachedBannerAction}>Retry</Text>
+            <Text style={styles.cachedBannerAction}>Provo</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -378,24 +380,24 @@ export default function HomeScreen({ navigation }: any) {
         showsVerticalScrollIndicator={false}
       >
         {loading && !question ? (
-          <StatePanel variant="loading" message="Loading today's question…" />
+          <StatePanel variant="loading" message="Po ngarkojmë pyetjen e ditës…" />
         ) : apiOffline ? (
           <StatePanel
             variant="error"
-            title="Can't reach the server"
+            title="Serveri nuk përgjigjet"
             message={
               __DEV__
-                ? `Trying ${API_BASE_URL}. Start the API, then retry.`
-                : "Check your connection and try again."
+                ? `Po provojmë ${API_BASE_URL}. Nis API-në dhe provo sërish.`
+                : "Kontrollo internetin dhe provo sërish."
             }
-            primaryLabel="Try again"
+            primaryLabel="Provo sërish"
             onPrimaryPress={fetchDaily}
           />
         ) : question ? (
           <>
             {!COMPACT_HOME && isHot && (
               <Animated.View style={[styles.hotBadge, { opacity: hotGlow }]}>
-                <Text style={styles.hotBadgeText}>🔥🔥 BLOWING UP RIGHT NOW</Text>
+                <Text style={styles.hotBadgeText}>🔥🔥 PO SHPËRTHEN TANI</Text>
               </Animated.View>
             )}
 
@@ -412,7 +414,7 @@ export default function HomeScreen({ navigation }: any) {
 
             <View style={styles.titleRow}>
               <Text style={styles.todayTitle}>
-                {questionCountryInfo.flag} Pyetja e dites
+                {questionCountryInfo.flag} Pyetja e ditës
               </Text>
               {question.country && question.country !== "GLOBAL" && (
                 <View style={styles.questionCountryTag}>
@@ -439,17 +441,17 @@ export default function HomeScreen({ navigation }: any) {
 
               {avgTime && (
                 <Text style={styles.avgTimeLabel}>
-                  ⏱️ Avg response: {avgTime}s — can you beat it?
+                  ⏱️ Mesatarja: {avgTime}s — e mund dot?
                 </Text>
               )}
 
               <Text style={styles.answerCount}>
-                👥 {totalAnswers} people answered today
+                👥 {totalAnswers} përgjigje sot
               </Text>
             </Animated.View>
             ) : totalAnswers > 0 ? (
               <Text style={styles.compactSocialProof}>
-                👥 {totalAnswers} answered today
+                👥 {totalAnswers} përgjigje sot
               </Text>
             ) : null}
 
@@ -466,7 +468,7 @@ export default function HomeScreen({ navigation }: any) {
               >
                 <Ionicons name="flash" size={22} color="#FFF" />
                 <Text style={styles.answerButtonText}>
-                  {COMPACT_HOME ? "⚡ Pergjigju tani" : isHot ? "🔥 Pergjigju TANI" : "⚡ Pergjigju ne 5 sekonda"}
+                  {COMPACT_HOME ? "Përgjigju tani" : isHot ? "🔥 Përgjigju TANI" : "Përgjigju në 5 sekonda"}
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -489,7 +491,7 @@ export default function HomeScreen({ navigation }: any) {
                 style={styles.softEntryPill}
                 onPress={goDuels}
               >
-                <Text style={styles.softEntryPillText}>⚔️ Duels</Text>
+                <Text style={styles.softEntryPillText}>⚔️ Duele</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.softEntryPill}
@@ -505,7 +507,7 @@ export default function HomeScreen({ navigation }: any) {
               onPress={goFeed}
             >
               <Text style={styles.scrollCtaText}>
-                {COMPACT_HOME ? "▶ Shiko pergjigjet ne feed" : "⬇ Shiko si u pergjigjen te tjeret"}
+                {COMPACT_HOME ? "▶ Shiko përgjigjet në feed" : "▶ Shiko si u përgjigjën të tjerët"}
               </Text>
             </TouchableOpacity>
 
@@ -515,7 +517,7 @@ export default function HomeScreen({ navigation }: any) {
               <View style={styles.discoverySection}>
                 {personalizedQuestions.length > 0 && (
                   <View style={styles.discoveryBlock}>
-                    <Text style={styles.discoveryTitle}>For your vibe</Text>
+                    <Text style={styles.discoveryTitle}>Për ty</Text>
                     {personalizedQuestions.map((item) => (
                       <TouchableOpacity
                         key={`personalized-${item.id}`}
@@ -532,7 +534,7 @@ export default function HomeScreen({ navigation }: any) {
 
                 {hotQuestions.length > 0 && (
                   <View style={styles.discoveryBlock}>
-                    <Text style={styles.discoveryTitle}>Hot right now</Text>
+                    <Text style={styles.discoveryTitle}>Të nxehta tani</Text>
                     {hotQuestions.map((item) => (
                       <TouchableOpacity
                         key={`hot-${item.id}`}
@@ -552,7 +554,7 @@ export default function HomeScreen({ navigation }: any) {
 
                 {patterns.length > 0 && (
                   <View style={styles.discoveryBlock}>
-                    <Text style={styles.discoveryTitle}>What works here</Text>
+                    <Text style={styles.discoveryTitle}>Çfarë funksionon këtu</Text>
                     <View style={styles.patternRow}>
                       {patterns.map((pattern) => (
                         <View key={`pattern-${pattern.id}`} style={styles.patternChip}>
@@ -570,11 +572,11 @@ export default function HomeScreen({ navigation }: any) {
         ) : (
           <StatePanel
             variant="empty"
-            title="No questions available"
-            message="Check back soon — a new daily question drops every day."
-            primaryLabel="Open feed"
+            title="Nuk ka pyetje tani"
+            message="Kthehu së shpejti — çdo ditë del një pyetje e re."
+            primaryLabel="Hap feed-in"
             onPrimaryPress={goFeed}
-            secondaryLabel="Retry"
+            secondaryLabel="Provo sërish"
             onSecondaryPress={fetchDaily}
           />
         )}
@@ -582,6 +584,7 @@ export default function HomeScreen({ navigation }: any) {
 
       {!COMPACT_HOME ? (
       <FloatingPrompt
+        hideTypes={["answer"]}
         onPress={(type) => {
           if (type === 'answer') navigation.navigate('Record');
           else if (type === 'remix') navigation.navigate('Feed');
@@ -632,7 +635,7 @@ const styles = StyleSheet.create({
   },
   contentInner: {
     paddingHorizontal: 22,
-    paddingBottom: 32,
+    paddingBottom: 96,
   },
   cachedBanner: {
     alignSelf: "center",

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { usePush } from "../context/PushContext";
 import {
   dismissPushSoftPrompt,
@@ -72,8 +73,35 @@ export default function PushOptInBanner({ compact = false }: Props) {
     setVisible(false);
   };
 
+  const title = isDenied ? "Njoftimet janë të fikura" : "Mos e humb pyetjen e ditës";
+  const primaryLabel = isDenied ? "Cilësimet" : busy ? "…" : "Aktivizo";
+
+  if (compact) {
+    return (
+      <View style={[styles.wrap, styles.wrapCompact]}>
+        <View style={styles.compactRow}>
+          <Ionicons name="notifications" size={16} color="#FF5C8A" />
+          <Text style={styles.compactTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <TouchableOpacity style={styles.compactPrimary} onPress={onEnable} activeOpacity={0.9}>
+            <Text style={styles.primaryText}>{primaryLabel}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onDismiss}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Jo tani"
+          >
+            <Ionicons name="close" size={18} color="rgba(255,255,255,0.5)" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
-    <View style={[styles.wrap, compact && styles.wrapCompact]}>
+    <View style={styles.wrap}>
       <LinearGradient
         colors={["rgba(255,51,102,0.16)", "rgba(255,51,102,0.05)"]}
         start={{ x: 0, y: 0 }}
@@ -81,23 +109,19 @@ export default function PushOptInBanner({ compact = false }: Props) {
         style={styles.card}
       >
         <View style={styles.copy}>
-          <Text style={styles.title}>
-            {isDenied ? "Notifications are off" : "Don't miss today's question"}
-          </Text>
+          <Text style={styles.title}>{title}</Text>
           <Text style={styles.body}>
             {isDenied
-              ? "Turn them on in Settings to get streak and daily reminders."
-              : "Get a quiet daily ping when the new 5-second question drops."}
+              ? "Aktivizoji te Cilësimet për kujtesat e serisë dhe pyetjen e ditës."
+              : "Një njoftim i qetë çdo ditë kur del pyetja e re 5-sekondëshe."}
           </Text>
         </View>
         <View style={styles.actions}>
           <TouchableOpacity style={styles.primary} onPress={onEnable} activeOpacity={0.9}>
-            <Text style={styles.primaryText}>
-              {isDenied ? "Open Settings" : busy ? "…" : "Enable"}
-            </Text>
+            <Text style={styles.primaryText}>{primaryLabel}</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onDismiss} hitSlop={8}>
-            <Text style={styles.secondary}>Not now</Text>
+            <Text style={styles.secondary}>Jo tani</Text>
           </TouchableOpacity>
         </View>
       </LinearGradient>
@@ -113,6 +137,30 @@ const styles = StyleSheet.create({
   wrapCompact: {
     marginTop: 8,
     marginBottom: 4,
+  },
+  compactRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,51,102,0.28)",
+    backgroundColor: "rgba(255,51,102,0.1)",
+    paddingVertical: 8,
+    paddingLeft: 12,
+    paddingRight: 10,
+  },
+  compactTitle: {
+    flex: 1,
+    color: "#FFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  compactPrimary: {
+    backgroundColor: "#FF2D6A",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   card: {
     borderRadius: 16,

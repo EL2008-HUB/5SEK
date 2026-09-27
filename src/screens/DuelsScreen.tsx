@@ -12,6 +12,7 @@ import { StatusBar } from "expo-status-bar";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { DuelQueueEntry, duelsApi, getApiErrorMessage } from "../services/api";
 import { storage } from "../services/storage";
 import DuelCard, { DuelFeedItem } from "../components/DuelCard";
@@ -35,6 +36,7 @@ function readRows(data: any): DuelFeedItem[] {
 
 export default function DuelsScreen() {
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const navigation = useNavigation<any>();
   const [duels, setDuels] = useState<DuelFeedItem[]>([]);
   const [mine, setMine] = useState<MineState>({ active_duel: null, queue: [] });
@@ -159,9 +161,9 @@ export default function DuelsScreen() {
         }}
       >
         <StatusBar style="light" />
-        <TouchableOpacity style={styles.back} onPress={() => setSelected(null)}>
+        <TouchableOpacity style={[styles.back, { top: insets.headerTop(4) }]} onPress={() => setSelected(null)}>
           <Ionicons name="chevron-back" size={22} color="#FFF" />
-          <Text style={styles.backText}>Te gjitha duels</Text>
+          <Text style={styles.backText}>Të gjitha duelet</Text>
         </TouchableOpacity>
         <DuelCard
           duel={selected}
@@ -181,7 +183,7 @@ export default function DuelsScreen() {
   const listWithoutMine = myActive ? duels.filter((duel) => duel.id !== myActive.id) : duels;
 
   return (
-    <LinearGradient colors={Colors.background.gradient} style={styles.container}>
+    <LinearGradient colors={Colors.background.gradient} style={[styles.container, { paddingTop: insets.headerTop(8) }]}>
       <StatusBar style="light" />
       <ScrollView
         contentContainerStyle={styles.list}

@@ -52,6 +52,7 @@ module.exports = () => ({
     scheme: "five-second",
     plugins: [
       "expo-notifications",
+      "expo-secure-store",
       [
         "expo-camera",
         {
@@ -89,10 +90,9 @@ module.exports = () => ({
         {
           action: "VIEW",
           autoVerify: true,
-          data: [
-            { scheme: "https", host: "5sek.app", pathPrefix: "/a" },
-            { scheme: "https", host: "www.5sek.app", pathPrefix: "/a" },
-          ],
+          data: ["5sek.app", "www.5sek.app"].flatMap((host) =>
+            ["/a/", "/c/", "/q/", "/d/", "/feed"].map((pathPrefix) => ({ scheme: "https", host, pathPrefix }))
+          ),
           category: ["BROWSABLE", "DEFAULT"],
         },
       ],

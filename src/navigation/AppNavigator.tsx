@@ -1,5 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { Linking } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Colors, Shadows } from "../theme";
 import {
   NavigationContainer,
   useNavigation,
@@ -61,34 +64,64 @@ function HomeWithRecordIntent(props: any) {
   return <HomeScreen {...props} />;
 }
 
+const TAB_LABELS: Record<string, string> = {
+  Home: "Kreu",
+  Duels: "Duele",
+  Record: "5 SEK",
+  Feed: "Feed",
+  Profile: "Profili",
+};
+
+function RecordTabIcon({ focused }: { focused: boolean }) {
+  return (
+    <View style={[tabStyles.recordOuter, focused && tabStyles.recordOuterActive]}>
+      <LinearGradient
+        colors={Colors.accent.primaryGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={tabStyles.recordInner}
+      >
+        <Text style={tabStyles.recordText}>5</Text>
+      </LinearGradient>
+    </View>
+  );
+}
+
 function MainTabs() {
+  const insets = useSafeAreaInsets();
+  const bottomPad = Math.max(insets.bottom, 10);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName: keyof typeof Ionicons.glyphMap = "home";
+        tabBarIcon: ({ focused, color }) => {
+          if (route.name === "Record") return <RecordTabIcon focused={focused} />;
 
+          let iconName: keyof typeof Ionicons.glyphMap = "home";
           if (route.name === "Home") iconName = focused ? "home" : "home-outline";
           else if (route.name === "Duels") iconName = focused ? "flash" : "flash-outline";
-          else if (route.name === "Record") iconName = focused ? "radio-button-on" : "radio-button-off";
           else if (route.name === "Feed") iconName = focused ? "play-circle" : "play-circle-outline";
           else if (route.name === "Profile") iconName = focused ? "person" : "person-outline";
 
-          return <Ionicons name={iconName} size={size} color={color} />;
+          return <Ionicons name={iconName} size={24} color={color} />;
         },
+        tabBarLabel: TAB_LABELS[route.name] || route.name,
         tabBarActiveTintColor: "#FF2D6A",
         tabBarInactiveTintColor: "rgba(255,255,255,0.45)",
+        tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: "#0A0A10",
           borderTopColor: "rgba(255,45,106,0.18)",
-          borderTopWidth: 1,
-          height: 90,
-          paddingBottom: 30,
-          paddingTop: 10,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          height: 58 + bottomPad,
+          paddingBottom: bottomPad,
+          paddingTop: 6,
+          elevation: 0,
         },
+        tabBarItemStyle: { paddingVertical: 2 },
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: "600",
+          fontWeight: "700",
         },
         headerShown: false,
       })}
@@ -99,8 +132,7 @@ function MainTabs() {
         name="Record"
         component={RecordScreen}
         options={{
-          tabBarLabel: "5 SEK",
-          tabBarIconStyle: { transform: [{ scale: 1.3 }] },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: "900", marginTop: 2 },
         }}
       />
       <Tab.Screen name="Feed" component={FeedScreen} />
@@ -108,6 +140,35 @@ function MainTabs() {
     </Tab.Navigator>
   );
 }
+
+const tabStyles = StyleSheet.create({
+  recordOuter: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginTop: -18,
+    padding: 3,
+    backgroundColor: "#0A0A10",
+    borderWidth: 1,
+    borderColor: "rgba(255,45,106,0.35)",
+    ...Shadows.glowPrimary,
+  },
+  recordOuterActive: {
+    borderColor: "#FF2D6A",
+    transform: [{ scale: 1.06 }],
+  },
+  recordInner: {
+    flex: 1,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recordText: {
+    color: "#FFF",
+    fontSize: 22,
+    fontWeight: "900",
+  },
+});
 
 function navigateFromDeepLink(navigationRef: any, url: string) {
   const target = parseDeepLinkTarget(url);

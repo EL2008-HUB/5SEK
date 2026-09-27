@@ -23,6 +23,7 @@ import RewardOverlay from "../components/RewardOverlay";
 import ShareOverlay from "../components/ShareOverlay";
 import PaywallModal from "../components/PaywallModal";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { DuelCreateResult, answersApi, duelsApi, paywallApi, paymentsApi, questionsApi } from "../services/api";
 import { storage } from "../services/storage";
 import { analytics } from "../services/analytics";
@@ -122,6 +123,7 @@ export default function RecordScreen({ route, navigation }: any) {
   const entryMode = route?.params?.mode;
   const challengeAnswerId = Number(route?.params?.challengeAnswerId) || null;
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const cameraRef = useRef<any>(null);
   const hasStartedRef = useRef(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -826,7 +828,7 @@ export default function RecordScreen({ route, navigation }: any) {
           facing={facing}
           mode="video"
         >
-          <View style={styles.topOverlay}>
+          <View style={[styles.topOverlay, { paddingTop: insets.headerTop(8) }]}>
             <TouchableOpacity style={styles.cameraIconBtn} onPress={() => navigation.goBack()}>
               <Ionicons name="close" size={24} color="#FFF" />
             </TouchableOpacity>
@@ -878,7 +880,7 @@ export default function RecordScreen({ route, navigation }: any) {
 
       {!showCamera && phase === "idle" && (
         <ScrollView
-          contentContainerStyle={styles.answerScroll}
+          contentContainerStyle={[styles.answerScroll, { paddingTop: insets.headerTop(0) }]}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.answerShell}>
@@ -1039,7 +1041,7 @@ export default function RecordScreen({ route, navigation }: any) {
             style={styles.previewGradient}
           />
 
-          <View style={styles.previewTopRow}>
+          <View style={[styles.previewTopRow, { top: insets.headerTop(6) }]}>
             <TouchableOpacity
               style={styles.previewBack}
               onPress={() => {

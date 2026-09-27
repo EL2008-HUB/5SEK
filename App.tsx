@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import { AppState, Platform, View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { AuthProvider } from "./src/context/AuthContext";
 import { countryApi } from "./src/services/api";
@@ -22,11 +23,11 @@ function ErrorFallback({
 }) {
   return (
     <ScrollView style={styles.errorContainer} contentContainerStyle={styles.errorContent}>
-      <Text style={styles.errorTitle}>Something went wrong</Text>
+      <Text style={styles.errorTitle}>Diçka shkoi keq</Text>
       <Text style={styles.errorMessage}>{error.message}</Text>
       {onRetry ? (
         <TouchableOpacity style={styles.retryBtn} onPress={onRetry} activeOpacity={0.9}>
-          <Text style={styles.retryBtnText}>Try again</Text>
+          <Text style={styles.retryBtnText}>Provo sërish</Text>
         </TouchableOpacity>
       ) : null}
       {__DEV__ && (
@@ -137,7 +138,7 @@ function AppContent() {
 export function App() {
   return (
     <SentryErrorBoundary>
-      <View style={styles.container}>
+      <SafeAreaProvider style={styles.container}>
         <ConnectivityProvider>
           <AuthProvider>
             <FusionLoopProvider>
@@ -147,7 +148,7 @@ export function App() {
             </FusionLoopProvider>
           </AuthProvider>
         </ConnectivityProvider>
-      </View>
+      </SafeAreaProvider>
     </SentryErrorBoundary>
   );
 }
@@ -157,11 +158,11 @@ export default Platform.OS === "web" ? App : Sentry.wrap(App);
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0F0F1A",
+    backgroundColor: "#050508",
   },
   errorContainer: {
     flex: 1,
-    backgroundColor: "#0F0F1A",
+    backgroundColor: "#050508",
     padding: 20,
   },
   errorContent: {

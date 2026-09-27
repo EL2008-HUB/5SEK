@@ -16,12 +16,14 @@ import {
   Dimensions,
 } from "react-native";
 import { useFusionLoop } from "../context/FusionLoopContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 
 const { width } = Dimensions.get("window");
 
 export default function FusionBadgeToast() {
   const { lastBadge, lastRandomReward, dismissBadge, dismissReward } =
     useFusionLoop();
+  const insets = useScreenInsets();
 
   const slideAnim = useRef(new Animated.Value(-80)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -84,6 +86,7 @@ export default function FusionBadgeToast() {
       style={[
         styles.container,
         {
+          top: insets.top + 56,
           transform: [
             { translateY: slideAnim },
             { scale: scaleAnim },

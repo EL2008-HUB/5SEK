@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import RewardOverlay from "../components/RewardOverlay";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { answersApi } from "../services/api";
 import { analytics } from "../services/analytics";
 import {
@@ -42,6 +43,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
     text: route?.params?.questionText,
   };
   const { user } = useAuth();
+  const insets = useScreenInsets();
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [countdown, setCountdown] = useState(MAX_SECONDS);
@@ -339,7 +341,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
     return (
       <View style={styles.root}>
         <LinearGradient colors={Colors.background.gradient} style={StyleSheet.absoluteFill} />
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.headerTop(8) }]}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
             <Ionicons name="chevron-back" size={22} color="#FFF" />
           </TouchableOpacity>
@@ -369,7 +371,7 @@ export default function AudioAnswerScreen({ route, navigation }: any) {
       <StatusBar style="light" />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.headerTop(8) }]}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="chevron-back" size={22} color="#FFF" />
         </TouchableOpacity>

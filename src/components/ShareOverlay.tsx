@@ -34,6 +34,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { buildAnswerShareUrl, buildChallengeShareUrl } from "../services/deepLinks";
 import { shareApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 
 // Safe imports (may not be installed)
 let Haptics: any = null;
@@ -68,6 +69,7 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
   const [toast, setToast] = useState<string | null>(null);
   const toastFade = useRef(new Animated.Value(0)).current;
   const [creatorStats, setCreatorStats] = useState<any>(null);
+  const insets = useScreenInsets();
   const shareUrl = postAnswer ? buildChallengeShareUrl(video.id) : buildAnswerShareUrl(video.id);
   const previewMessage = postAnswer
     ? `Pata 5 sekonda për këtë 👀\n"${video.question_text}"\nMë mund dot? ⚔️`
@@ -301,7 +303,7 @@ export default function ShareOverlay({ video, onClose, postAnswer }: ShareOverla
 
       {/* 🔥 Toast notification */}
       {toast && (
-        <Animated.View style={[styles.toast, { opacity: toastFade }]}>
+        <Animated.View style={[styles.toast, { opacity: toastFade, top: insets.headerTop(24) }]}>
           <Text style={styles.toastText}>{toast}</Text>
         </Animated.View>
       )}

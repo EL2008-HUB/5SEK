@@ -15,6 +15,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 import { usePush } from "../context/PushContext";
 import { answersApi, countryApi, moderationApi, paymentsApi, questionsApi } from "../services/api";
 import { isMonetizationEnabled } from "../utils/productionConfig";
@@ -78,6 +79,7 @@ interface LearnedPattern {
 export default function ProfileScreen() {
   const navigation = useNavigation<any>();
   const { user, updateProfile, isGuest, logout } = useAuth();
+  const insets = useScreenInsets();
   const { permission: pushPermission, expoPushToken, sendTestPush, requestEnablePush } = usePush();
   const [answers, setAnswers] = useState<UserAnswer[]>([]);
   const [loadingAnswers, setLoadingAnswers] = useState(true);
@@ -214,7 +216,7 @@ export default function ProfileScreen() {
   if (selectedInterests.length > 0) personalizationParts.push(selectedInterests.slice(0, 3).join(", "));
 
   return (
-    <LinearGradient colors={Colors.background.gradient} style={styles.container}>
+    <LinearGradient colors={Colors.background.gradient} style={[styles.container, { paddingTop: insets.headerTop(12) }]}>
       <StatusBar style="light" />
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.header}>

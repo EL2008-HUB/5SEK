@@ -26,6 +26,7 @@ import {
   markUploadFailed,
 } from "../services/uploadQueue";
 import { showAppAlert } from "../utils/alerts";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 
 const { height } = Dimensions.get("window");
 const MAX_DURATION = 5;
@@ -48,6 +49,7 @@ export default function RemixRecordScreen({ route, navigation }: any) {
     chainDepth,
     autoStart = false,
   } = route?.params || {};
+  const insets = useScreenInsets();
 
   const cameraRef = useRef<any>(null);
   const hasStartedRef = useRef(false);
@@ -326,7 +328,7 @@ export default function RemixRecordScreen({ route, navigation }: any) {
       <LinearGradient colors={["#090C17", "#0F0F1A", "#14142A"]} style={StyleSheet.absoluteFill} />
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.headerTop(8) }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn}>
           <Ionicons name="close" size={28} color="#FFF" />
         </TouchableOpacity>

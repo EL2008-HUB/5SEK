@@ -49,14 +49,14 @@ export default function LeaderboardTeaser() {
   const top = data.entries.slice(0, 3);
   const me = data.me;
   const meLine = !me
-    ? "Hyr ne renditje me nje pergjigje"
+    ? "Hyr në renditje me një përgjigje"
     : !me.points
-    ? "Ti: 0 pike - nje pergjigje = +5"
+    ? "Ti: 0 pikë · një përgjigje = +5"
     : me.rank === 1
-    ? "Ti je #1 kete jave"
+    ? "Ti je #1 këtë javë"
     : data.next_rank
-    ? `Ti: #${me.rank} · ${data.next_rank.points_needed} pike deri te #${data.next_rank.rank}`
-    : `Ti: #${me.rank} · ${me.points} pike`;
+    ? `Ti: #${me.rank} · ${data.next_rank.points_needed} pikë deri te #${data.next_rank.rank}`
+    : `Ti: #${me.rank} · ${me.points} pikë`;
 
   return (
     <TouchableOpacity
@@ -85,11 +85,11 @@ export default function LeaderboardTeaser() {
         </View>
         <View style={styles.copy}>
           <View style={styles.titleRow}>
-            <Text style={styles.title}>Renditja e javes</Text>
+            <Text style={styles.title}>Renditja e javës</Text>
             <Text style={styles.crown}>👑</Text>
           </View>
           <Text style={styles.sub} numberOfLines={1}>
-            {top[0] ? `@${top[0].is_guest ? "vizitor" : top[0].username} kryeson me ${top[0].points} pike` : ""}
+            {top[0] ? `@${top[0].is_guest ? "vizitor" : top[0].username} kryeson me ${top[0].points} pikë` : ""}
           </Text>
           <Text style={[styles.me, user?.id === top[0]?.user_id && styles.meLeader]} numberOfLines={1}>
             {meLine}

@@ -26,11 +26,13 @@ import VideoCard from "../components/VideoCard";
 import { answersApi, shareApi } from "../services/api";
 import { eventTracker } from "../services/eventTracker";
 import { useAuth } from "../context/AuthContext";
+import { useScreenInsets } from "../hooks/useScreenInsets";
 
 export default function DeepAnswerScreen({ route, navigation }: any) {
   const answerId = Number(route?.params?.answerId);
   const isChallenge = route?.name === "Challenge" || route?.params?.challenge === true;
   const { user } = useAuth();
+  const insets = useScreenInsets();
   const [answer, setAnswer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -182,7 +184,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
       {/* Show the answer full-screen */}
       <VideoCard video={answer} isVisible={true} position={0} />
 
-      <Animated.View style={[styles.persistentOverlay, { opacity: fadeIn }]}>
+      <Animated.View style={[styles.persistentOverlay, { opacity: fadeIn, top: insets.headerTop(4) }]}>
         <TouchableOpacity
           style={styles.closeButton}
           onPress={close}
@@ -203,6 +205,7 @@ export default function DeepAnswerScreen({ route, navigation }: any) {
         style={[
           styles.ctaOverlay,
           {
+            bottom: insets.footerBottom(12),
             opacity: fadeIn,
             transform: [{ scale: ctaScale }],
           },

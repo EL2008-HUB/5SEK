@@ -13,6 +13,8 @@ import { PushProvider } from "./src/context/PushContext";
 import { FusionLoopProvider } from "./src/context/FusionLoopContext";
 import FusionBadgeToast from "./src/components/FusionBadgeToast";
 
+installObservability();
+
 // Error Boundary to catch initialization errors
 function ErrorFallback({
   error,
@@ -79,14 +81,6 @@ function AppContent() {
   const [initError] = useState<Error | null>(null);
 
   useEffect(() => {
-    try {
-      // Initialize observability safely
-      installObservability();
-    } catch (e) {
-      console.error("[App] Sentry init failed:", e);
-      // Non-fatal - continue without Sentry
-    }
-
     try {
       analytics.appOpen();
     } catch (e) {

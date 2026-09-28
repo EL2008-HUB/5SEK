@@ -1,4 +1,5 @@
 import * as Notifications from "expo-notifications";
+import { isExpoGo } from "../utils/expoRuntime";
 import { storage } from "./storage";
 
 const PROMPT_DISMISS_KEY = "@5sek_push_prompt_dismissed_at";
@@ -30,6 +31,7 @@ export async function dismissPushSoftPrompt(): Promise<void> {
 }
 
 export async function scheduleDailyQuestionReminder(hour = 19, minute = 0): Promise<void> {
+  if (isExpoGo()) return;
   try {
     await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_ID).catch(() => {});
 
@@ -53,6 +55,7 @@ export async function scheduleDailyQuestionReminder(hour = 19, minute = 0): Prom
 }
 
 export async function cancelDailyQuestionReminder(): Promise<void> {
+  if (isExpoGo()) return;
   try {
     await Notifications.cancelScheduledNotificationAsync(DAILY_REMINDER_ID);
   } catch (_) {}

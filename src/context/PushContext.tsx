@@ -12,6 +12,7 @@ import {
   cancelDailyQuestionReminder,
   scheduleDailyQuestionReminder,
 } from "../services/pushRetention";
+import { isExpoGo } from "../utils/expoRuntime";
 
 type PermissionState =
   | "unknown"
@@ -53,10 +54,6 @@ function resolveDeeplink(data: Record<string, unknown> | null | undefined) {
   if (typeof data.deeplink === "string") return data.deeplink;
   if (typeof data.url === "string") return data.url;
   return null;
-}
-
-function isExpoGo() {
-  return Constants.appOwnership === "expo";
 }
 
 async function registerTokenWithBackend(token: string) {

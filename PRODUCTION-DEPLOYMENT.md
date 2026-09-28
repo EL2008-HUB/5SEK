@@ -2,14 +2,16 @@
 
 ## Përmbledhje e Hapave të Production
 
-| Hapi | Përshkrimi | Status |
-|------|-----------|--------|
-| 1 | Environment Variables Setup | ✅ Kompletuar |
-| 2 | Database Migration | ✅ Kompletuar |
-| 3 | Docker Build | ✅ Kompletuar |
-| 4 | SSL/Nginx Setup | ✅ Kompletuar |
-| 5 | Health Monitoring | ✅ Kompletuar |
-| 6 | Deployment Scripts | ✅ Kompletuar |
+
+| Hapi | Përshkrimi                  | Status       |
+| ---- | --------------------------- | ------------ |
+| 1    | Environment Variables Setup | ✅ Kompletuar |
+| 2    | Database Migration          | ✅ Kompletuar |
+| 3    | Docker Build                | ✅ Kompletuar |
+| 4    | SSL/Nginx Setup             | ✅ Kompletuar |
+| 5    | Health Monitoring           | ✅ Kompletuar |
+| 6    | Deployment Scripts          | ✅ Kompletuar |
+
 
 ---
 
@@ -18,6 +20,7 @@
 ### **HAPI 1: Konfigurimi i Environment Variables**
 
 #### Backend (`5second-api/.env`)
+
 ```env
 NODE_ENV=production
 PORT=3000
@@ -35,7 +38,10 @@ CLOUDINARY_API_SECRET=your_api_secret
 SENTRY_DSN=https://your-key@o0.ingest.sentry.io/0
 ```
 
+
+
 #### Frontend (`5second-app/.env`)
+
 ```env
 EXPO_PUBLIC_API_URL=https://api.yourdomain.com/api
 EXPO_PUBLIC_EAS_PROJECT_ID=your-eas-project-id
@@ -47,6 +53,8 @@ EXPO_PUBLIC_SENTRY_ENVIRONMENT=production
 
 ---
 
+
+
 ### **HAPI 2: Database Migration**
 
 ```bash
@@ -55,6 +63,7 @@ npm run migrate
 ```
 
 **Verifikimi:**
+
 ```bash
 # Check migrations status
 npx knex migrate:status
@@ -62,7 +71,11 @@ npx knex migrate:status
 
 ---
 
+
+
 ### **HAPI 3: Build & Deploy me Docker**
+
+
 
 #### A) Deploy me PowerShell Script (Rekomanduar)
 
@@ -80,6 +93,8 @@ cd c:\Users\eb826\OneDrive\Desktop\5SEK
 # Vetëm build, pa deploy
 .\scripts\deploy-production.ps1 -BuildOnly
 ```
+
+
 
 #### B) Deploy Manual me Docker Compose
 
@@ -99,6 +114,8 @@ docker-compose -f docker-compose.production.yml down
 
 ---
 
+
+
 ### **HAPI 4: SSL & Nginx Setup (Opcional por rekomanduar)**
 
 ```bash
@@ -116,6 +133,8 @@ docker-compose -f docker-compose.nginx.yml up -d
 
 ---
 
+
+
 ### **HAPI 5: Health Check & Monitoring**
 
 ```powershell
@@ -124,6 +143,7 @@ docker-compose -f docker-compose.nginx.yml up -d
 ```
 
 **Manual check:**
+
 ```bash
 # Basic health
 curl http://localhost:3000/health
@@ -136,6 +156,8 @@ curl http://localhost:3000/api/meta/contract
 ```
 
 ---
+
+
 
 ### **HAPI 6: Mobile App Build (EAS)**
 
@@ -158,6 +180,8 @@ eas submit --platform android
 
 ---
 
+
+
 ## 📁 Struktura e Skedarëve të Krijuar
 
 ```
@@ -175,9 +199,14 @@ eas submit --platform android
 
 ---
 
+
+
 ## 🔧 Komandat e Rëndësishme për Maintenance
 
+
+
 ### Docker Management
+
 ```bash
 # Shiko containerat
 docker-compose -f docker-compose.production.yml ps
@@ -192,19 +221,27 @@ docker-compose -f docker-compose.production.yml up -d --no-deps --build api
 docker stats
 ```
 
+
+
 ### Database Backup
+
 ```bash
 cd 5second-api
 npm run backup:db
 ```
 
+
+
 ### Media Cleanup
+
 ```bash
 cd 5second-api
 npm run cleanup:media
 ```
 
 ---
+
+
 
 ## 🏗️ Arkitektura e Production
 
@@ -247,6 +284,8 @@ npm run cleanup:media
 
 ---
 
+
+
 ## ✅ Checklist para se të shkosh Live
 
 - [ ] `.env` file është konfiguruar me vlera reale
@@ -263,9 +302,14 @@ npm run cleanup:media
 
 ---
 
+
+
 ## 🆘 Troubleshooting
 
+
+
 ### Problem: Container nuk starton
+
 ```bash
 # Check logs
 docker-compose -f docker-compose.production.yml logs api
@@ -274,7 +318,10 @@ docker-compose -f docker-compose.production.yml logs api
 docker-compose -f docker-compose.production.yml exec api env
 ```
 
+
+
 ### Problem: Database connection error
+
 ```bash
 # Verifiko DATABASE_URL
 docker-compose -f docker-compose.production.yml exec api echo $DATABASE_URL
@@ -283,7 +330,10 @@ docker-compose -f docker-compose.production.yml exec api echo $DATABASE_URL
 docker-compose -f docker-compose.production.yml exec api npx knex migrate:status
 ```
 
+
+
 ### Problem: Health check failing
+
 ```bash
 # Inside container
 docker-compose -f docker-compose.production.yml exec api wget -qO- http://localhost:3000/health
@@ -291,9 +341,12 @@ docker-compose -f docker-compose.production.yml exec api wget -qO- http://localh
 
 ---
 
+
+
 ## 📞 Kontakt & Mbështetje
 
 Për probleme gjatë deployment, verifiko:
+
 1. Logs e containerave (`docker-compose logs`)
 2. Environment variables (`docker-compose exec api env`)
 3. Health endpoint (`curl http://localhost:3000/health/detailed`)

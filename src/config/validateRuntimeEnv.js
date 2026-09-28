@@ -18,9 +18,11 @@ function validateRuntimeEnv({ exitOnFailure = false } = {}) {
   const hardFailures = missing(["JWT_SECRET"]);
   if (mode === "production") {
     hardFailures.push(...missing(["DATABASE_URL"]));
-    if (process.env.INLINE_BACKGROUND_WORKER === "true") hardFailures.push("INLINE_BACKGROUND_WORKER must be false in production");
-    if (process.env.INLINE_INJECTION_WORKER === "true") hardFailures.push("INLINE_INJECTION_WORKER must be false in production");
-    if (process.env.INLINE_DUEL_WORKER === "true") hardFailures.push("INLINE_DUEL_WORKER must be false in production");
+    // Inline workers are only safe when exactly one API instance runs; SINGLE_INSTANCE_WORKERS=true opts in.
+    const inlineAllowed = process.env.SINGLE_INSTANCE_WORKERS === "true";
+    if (!inlineAllowed && process.env.INLINE_BACKGROUND_WORKER === "true") hardFailures.push("INLINE_BACKGROUND_WORKER must be false in production (or set SINGLE_INSTANCE_WORKERS=true)");
+    if (!inlineAllowed && process.env.INLINE_INJECTION_WORKER === "true") hardFailures.push("INLINE_INJECTION_WORKER must be false in production (or set SINGLE_INSTANCE_WORKERS=true)");
+    if (!inlineAllowed && process.env.INLINE_DUEL_WORKER === "true") hardFailures.push("INLINE_DUEL_WORKER must be false in production (or set SINGLE_INSTANCE_WORKERS=true)");
     if (isWeakJwtSecret(process.env.JWT_SECRET)) hardFailures.push("JWT_SECRET must be at least 32 chars and not use placeholder/demo values");
     if (!hasCloudinaryConfig()) hardFailures.push("Cloudinary credentials are required in production");
   }

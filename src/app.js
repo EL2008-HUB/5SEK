@@ -103,7 +103,8 @@ function createCountryDetectionMiddleware() {
     next();
   });
   app.use((req, res, next) => {
-    if (requireHttpsInEdge() && req.headers["x-forwarded-proto"] !== "https") {
+    const isPlatformProbe = req.method === "GET" && (req.path === "/health" || req.path === "/ready");
+    if (requireHttpsInEdge() && !isPlatformProbe && req.headers["x-forwarded-proto"] !== "https") {
       return res.status(426).json({ error: "https_required" });
     }
     return next();

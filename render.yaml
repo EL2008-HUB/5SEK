@@ -1,70 +1,52 @@
+databases:
+  - name: 5sek-db
+    plan: free
+    region: frankfurt
+    databaseName: fivesek
+    user: fivesek
+
 services:
   - type: web
     name: 5sek-api
     runtime: node
-    buildCommand: npm ci
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci --omit=dev
     startCommand: npm run start:api
     healthCheckPath: /ready
     autoDeployTrigger: commit
     envVars:
+      - key: NODE_VERSION
+        value: 22
       - key: NODE_ENV
         value: production
       - key: APP_ENV
         value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: 5sek-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      # One instance runs the job, duel and question-injection workers inline.
+      # Before scaling to more instances, set these to false and add dedicated workers.
+      - key: SINGLE_INSTANCE_WORKERS
+        value: true
       - key: INLINE_BACKGROUND_WORKER
-        value: false
+        value: true
       - key: INLINE_INJECTION_WORKER
-        value: false
+        value: true
       - key: INLINE_DUEL_WORKER
-        value: false
-
-  - type: worker
-    name: 5sek-job-worker
-    runtime: node
-    buildCommand: npm ci
-    startCommand: node scripts/run-job-worker.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: APP_ENV
-        value: production
-      - key: INLINE_BACKGROUND_WORKER
-        value: false
-      - key: INLINE_INJECTION_WORKER
-        value: false
-      - key: INLINE_DUEL_WORKER
-        value: false
-
-  - type: worker
-    name: 5sek-injection-worker
-    runtime: node
-    buildCommand: npm ci
-    startCommand: node scripts/run-injection-worker.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: APP_ENV
-        value: production
-      - key: INLINE_BACKGROUND_WORKER
-        value: false
-      - key: INLINE_INJECTION_WORKER
-        value: false
-      - key: INLINE_DUEL_WORKER
-        value: false
-
-  - type: worker
-    name: 5sek-duel-worker
-    runtime: node
-    buildCommand: npm ci
-    startCommand: node scripts/run-duel-worker.js
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: APP_ENV
-        value: production
-      - key: INLINE_BACKGROUND_WORKER
-        value: false
-      - key: INLINE_INJECTION_WORKER
-        value: false
-      - key: INLINE_DUEL_WORKER
-        value: false
+        value: true
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: PUBLIC_WEB_URL
+        value: https://5sek-api.onrender.com
+      - key: SUPPORT_EMAIL
+        value: support@5sek.app
